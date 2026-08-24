@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_OUTPUT_DIR = "reels"
+# Written by the onboarding UI (`reelnotes web`); real environment variables always win over it.
+CONFIG_PATH = Path(os.environ.get("REELNOTES_CONFIG") or "~/.config/reelnotes/config.env").expanduser()
 DEFAULT_OPENAI_TRANSCRIBE_MODEL = "gpt-4o-mini-transcribe"
 DEFAULT_OPENAI_SUMMARY_MODEL = "gpt-4o-mini"
 DEFAULT_ANTHROPIC_SUMMARY_MODEL = "claude-opus-5"
@@ -82,6 +84,37 @@ def detect_transcribe_provider(openai_key: str | None) -> str:
     return "none"
 
 
+def read_config_file(path: Path | None = None) -> dict[str, str]:
+    """Parse a KEY=VALUE file (comments and blank lines ignored). Missing file → {}."""
+    path = path or CONFIG_PATH  # resolved at call time so tests (and REELNOTES_CONFIG) can redirect it
+    if not path.exists():
+        return {}
+    values: dict[str, str] = {}
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        values[key.strip()] = value.strip().strip("'\"")
+    return values
+
+
+def write_config_file(values: dict[str, str], path: Path | None = None) -> Path:
+    """Write KEY=VALUE pairs (empty values dropped), owner-readable only since it may hold API keys."""
+    path = path or CONFIG_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = ["# reelnotes configuration — written by `reelnotes web`; edit freely.", ""]
+    lines += [f"{k}={v}" for k, v in sorted(values.items()) if v]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    path.chmod(0o600)
+    return path
+
+
+def _env() -> dict[str, str]:
+    """Config file values overlaid by the real environment (env wins)."""
+    return {**read_config_file(), **os.environ}
+
+
 def _validate(value: str, allowed: tuple[str, ...], what: str) -> str:
     value = value.lower().strip()
     if value not in allowed:
@@ -95,27 +128,28 @@ def load_settings(
     transcribe_provider: str | None = None,
 ) -> Settings:
     """Build settings from env, with optional explicit overrides (CLI flags win)."""
-    openai_key = os.environ.get("OPENAI_API_KEY") or None
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY") or None
+    env = _env()
+    openai_key = env.get("OPENAI_API_KEY") or None
+    anthropic_key = env.get("ANTHROPIC_API_KEY") or None
 
-    summary = summary_provider or os.environ.get("REELNOTES_SUMMARY_PROVIDER") or "auto"
+    summary = summary_provider or env.get("REELNOTES_SUMMARY_PROVIDER") or "auto"
     summary = detect_summary_provider(openai_key, anthropic_key) if summary == "auto" else summary
-    transcribe = transcribe_provider or os.environ.get("REELNOTES_TRANSCRIBE_PROVIDER") or "auto"
-    if os.environ.get("REELNOTES_TRANSCRIBE", "1").lower() in _FALSE:  # legacy off switch
+    transcribe = transcribe_provider or env.get("REELNOTES_TRANSCRIBE_PROVIDER") or "auto"
+    if env.get("REELNOTES_TRANSCRIBE", "1").lower() in _FALSE:  # legacy off switch
         transcribe = "none"
     transcribe = detect_transcribe_provider(openai_key) if transcribe == "auto" else transcribe
 
     return Settings(
-        output_dir=Path(output_dir or os.environ.get("REELNOTES_DIR") or DEFAULT_OUTPUT_DIR).expanduser(),
+        output_dir=Path(output_dir or env.get("REELNOTES_DIR") or DEFAULT_OUTPUT_DIR).expanduser(),
         openai_api_key=openai_key,
         anthropic_api_key=anthropic_key,
         summary_provider=_validate(summary, SUMMARY_PROVIDERS, "summary provider"),
         transcribe_provider=_validate(transcribe, TRANSCRIBE_PROVIDERS, "transcribe provider"),
-        openai_transcribe_model=os.environ.get("REELNOTES_TRANSCRIBE_MODEL", DEFAULT_OPENAI_TRANSCRIBE_MODEL),
-        openai_summary_model=os.environ.get("REELNOTES_OPENAI_MODEL", DEFAULT_OPENAI_SUMMARY_MODEL),
-        anthropic_summary_model=os.environ.get("REELNOTES_ANTHROPIC_MODEL", DEFAULT_ANTHROPIC_SUMMARY_MODEL),
-        claude_code_model=os.environ.get("REELNOTES_CLAUDE_CODE_MODEL") or None,
-        codex_model=os.environ.get("REELNOTES_CODEX_MODEL") or None,
-        whisper_model=os.environ.get("REELNOTES_WHISPER_MODEL", DEFAULT_WHISPER_MODEL),
-        audience=os.environ.get("REELNOTES_AUDIENCE", "the reader"),
+        openai_transcribe_model=env.get("REELNOTES_TRANSCRIBE_MODEL", DEFAULT_OPENAI_TRANSCRIBE_MODEL),
+        openai_summary_model=env.get("REELNOTES_OPENAI_MODEL", DEFAULT_OPENAI_SUMMARY_MODEL),
+        anthropic_summary_model=env.get("REELNOTES_ANTHROPIC_MODEL", DEFAULT_ANTHROPIC_SUMMARY_MODEL),
+        claude_code_model=env.get("REELNOTES_CLAUDE_CODE_MODEL") or None,
+        codex_model=env.get("REELNOTES_CODEX_MODEL") or None,
+        whisper_model=env.get("REELNOTES_WHISPER_MODEL", DEFAULT_WHISPER_MODEL),
+        audience=env.get("REELNOTES_AUDIENCE", "the reader"),
     )

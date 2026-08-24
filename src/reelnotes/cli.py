@@ -24,7 +24,9 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "urls", nargs="*", help="one or more reel / short-video links; or the word 'mcp' to run the MCP server"
+        "urls",
+        nargs="*",
+        help="one or more reel / short-video links; or 'web' for the local setup UI, 'mcp' for the MCP server",
     )
     parser.add_argument("-o", "--out", help="output directory (default: ./reels or $REELNOTES_DIR)")
     parser.add_argument(
@@ -83,6 +85,11 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(
         level=logging.INFO if args.verbose else logging.WARNING, format="%(levelname)s %(name)s: %(message)s"
     )
+    if args.urls and args.urls[0] == "web":  # `reelnotes web [port]` → local onboarding + import UI
+        from reelnotes.web.server import serve
+
+        serve(port=int(args.urls[1]) if len(args.urls) > 1 else None, open_browser=not args.json)
+        return 0
     if args.urls == ["mcp"]:  # `reelnotes mcp` → stdio MCP server for Claude Code / Claude Desktop
         from reelnotes.mcp_server import run_server
 

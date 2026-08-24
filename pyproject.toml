@@ -40,6 +40,9 @@ Homepage = "https://github.com/adenjonah/reel-notes"
 [tool.hatch.build.targets.wheel]
 packages = ["src/reelnotes"]
 
+[tool.hatch.build]
+include = ["src/reelnotes/**/*.py", "src/reelnotes/web/index.html"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

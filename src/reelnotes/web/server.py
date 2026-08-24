@@ -1,0 +1,201 @@
+"""Local onboarding + import UI: ``reelnotes web``.
+
+Zero extra dependencies — stdlib ``http.server`` bound to 127.0.0.1 only, serving
+one HTML page and a few JSON endpoints. It writes the same config file the CLI,
+MCP server and Claude Code skill read, so choices made here apply everywhere.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+import shutil
+import subprocess
+import sys
+import threading
+import webbrowser
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from importlib.resources import files
+from pathlib import Path
+
+from reelnotes import __version__, config
+from reelnotes.pipeline import ReelImportError, import_reel
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_PORT = 8765
+HOST = "127.0.0.1"
+SAVABLE_KEYS = (
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "REELNOTES_SUMMARY_PROVIDER",
+    "REELNOTES_TRANSCRIBE_PROVIDER",
+    "REELNOTES_DIR",
+    "REELNOTES_AUDIENCE",
+    "REELNOTES_CLAUDE_CODE_MODEL",
+    "REELNOTES_CODEX_MODEL",
+    "REELNOTES_WHISPER_MODEL",
+)
+
+
+# ── state (no machine scanning: only our own config file + package facts) ──
+
+
+def describe() -> dict:
+    current = config.read_config_file()
+    return {
+        "version": __version__,
+        "python": sys.version.split()[0],
+        "config_path": str(config.CONFIG_PATH),
+        "config_exists": config.CONFIG_PATH.exists(),
+        "home": str(Path.home()),
+        "repo_dir": str(Path(__file__).resolve().parents[3]),
+        "faster_whisper": config._has_module("faster_whisper"),
+        "current": {k: current.get(k, "") for k in SAVABLE_KEYS if k not in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY")},
+        "has_openai_key": bool(current.get("OPENAI_API_KEY")),
+        "has_anthropic_key": bool(current.get("ANTHROPIC_API_KEY")),
+    }
+
+
+def cli_warning(provider: str) -> str | None:
+    """Only after the user picked a CLI backend: a PATH lookup for that one binary."""
+    binary = {"claude-code": "claude", "codex": "codex"}.get(provider)
+    if binary and not shutil.which(binary):
+        return f"`{binary}` isn't on your PATH yet. Install it, then imports will work."
+    return None
+
+
+# ── HTTP handler ───────────────────────────────────────────────────────
+
+
+def _load_index() -> bytes:
+    return files("reelnotes.web").joinpath("index.html").read_bytes()
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = f"reelnotes/{__version__}"
+
+    def log_message(self, fmt: str, *args) -> None:  # quiet by default; -v shows them
+        logger.info("%s " + fmt, self.address_string(), *args)
+
+    def _json(self, status: int, payload: dict) -> None:
+        body = json.dumps(payload, ensure_ascii=False).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _read_json(self) -> dict:
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length) if length else b"{}"
+        try:
+            data = json.loads(raw or b"{}")
+        except json.JSONDecodeError:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def do_GET(self) -> None:  # noqa: N802 — http.server API
+        if self.path in ("/", "/index.html"):
+            body = _load_index()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif self.path == "/api/state":
+            self._json(200, describe())
+        else:
+            self._json(404, {"error": "not found"})
+
+    def do_POST(self) -> None:  # noqa: N802
+        if self.path == "/api/config":
+            self._save_config()
+        elif self.path == "/api/import":
+            self._import()
+        elif self.path == "/api/open":
+            self._open_folder()
+        else:
+            self._json(404, {"error": "not found"})
+
+    def _save_config(self) -> None:
+        data = self._read_json()
+        existing = config.read_config_file()
+        merged = {**existing, **{k: str(data.get(k, existing.get(k, ""))).strip() for k in SAVABLE_KEYS}}
+        out_dir = merged.get("REELNOTES_DIR")
+        if out_dir:
+            try:
+                Path(out_dir).expanduser().mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                self._json(400, {"error": f"cannot create folder {out_dir}: {exc}"})
+                return
+        path = config.write_config_file(merged)
+        self._json(
+            200,
+            {
+                "saved": str(path),
+                "detect": describe(),
+                "warning": cli_warning(merged.get("REELNOTES_SUMMARY_PROVIDER", "")),
+            },
+        )
+
+    def _import(self) -> None:
+        url = str(self._read_json().get("url", "")).strip()
+        if not url:
+            self._json(400, {"error": "missing url"})
+            return
+        try:
+            result = asyncio.run(import_reel(url, config.load_settings()))
+        except ReelImportError as exc:
+            self._json(422, {"error": str(exc)})
+            return
+        except Exception as exc:  # noqa: BLE001 — surface to the page, keep the server alive
+            logger.exception("import crashed for %s", url)
+            self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
+            return
+        note = result.path.read_text(encoding="utf-8")
+        self._json(200, {**result.to_dict(), "note": note})
+
+    def _open_folder(self) -> None:
+        target = Path(str(self._read_json().get("path", ""))).expanduser()
+        if not target.exists():
+            self._json(404, {"error": "no such path"})
+            return
+        opener = {"darwin": ["open"], "win32": ["explorer"]}.get(sys.platform, ["xdg-open"])
+        try:
+            subprocess.Popen([*opener, str(target)])
+        except OSError as exc:
+            self._json(500, {"error": str(exc)})
+            return
+        self._json(200, {"opened": str(target)})
+
+
+# ── entry point ────────────────────────────────────────────────────────
+
+
+def _bind(preferred: int, attempts: int = 20) -> ThreadingHTTPServer:
+    """Bind the preferred port, else walk upward — a busy port must never block a first-time user."""
+    for port in range(preferred, preferred + attempts):
+        try:
+            return ThreadingHTTPServer((HOST, port), Handler)
+        except OSError as exc:
+            if exc.errno not in (48, 98, 10048):  # EADDRINUSE on macOS / Linux / Windows
+                raise
+    raise OSError(f"no free port in {preferred}-{preferred + attempts - 1}")
+
+
+def serve(port: int | None = None, open_browser: bool = True) -> None:
+    server = _bind(port or int(os.environ.get("REELNOTES_PORT") or DEFAULT_PORT))
+    port = server.server_address[1]
+    url = f"http://{HOST}:{port}/"
+    print(f"reelnotes {__version__} — setup & import UI at {url}  (Ctrl+C to stop)", flush=True)
+    if open_browser:
+        threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nbye")
+    finally:
+        server.server_close()

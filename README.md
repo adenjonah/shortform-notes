@@ -16,7 +16,17 @@ $ reelnotes https://www.instagram.com/reel/DQCkNLtgqEe/
 
 Built for "I'll save this recipe for later" and then never opening Instagram again. Notes are plain Markdown with YAML frontmatter, so they drop straight into Obsidian, Logseq, or a folder.
 
-## Install
+## Quick start (one command)
+
+```bash
+git clone https://github.com/adenjonah/reel-notes && cd reel-notes && ./start.sh
+```
+
+That's the whole install. `start.sh` fetches [uv](https://docs.astral.sh/uv/) if you don't have it, uv fetches Python and every dependency, and a local setup page opens in your browser. It walks you through three choices — how to run the AI (Claude Code, Codex, or an API key), how to transcribe, where to save notes — and then lets you paste a link and watch it work. Nothing on your machine is scanned; the page only asks.
+
+Windows: run `start.ps1`. macOS non-terminal users: double-click `Start.command`. Re-running the script later is instant and drops you straight on the import page; `./start.sh <url>` imports from the terminal instead.
+
+### Install as a CLI instead
 
 ```bash
 pipx install "reelnotes[all] @ git+https://github.com/adenjonah/reel-notes"
@@ -78,7 +88,7 @@ reelnotes --transcribe local <url>     # auto-detected once faster-whisper is in
 
 ### Configuration reference
 
-Everything is an environment variable (copy `.env.example`) or a flag:
+The setup page writes `~/.config/reelnotes/config.env`; the CLI, MCP server and Claude Code skill all read it. Real environment variables override it, and flags override both:
 
 | Variable | Flag | Default | What it does |
 |---|---|---|---|
