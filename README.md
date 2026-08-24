@@ -36,41 +36,13 @@ How do you want to set up shortform-notes?
 
 Windows: run `start.ps1`. macOS users who prefer not to open a terminal can double-click `Start.command`.
 
-### Browser setup
+### Setup
 
-Option 1 opens a local page at 127.0.0.1. Four steps, then a box to paste a link.
+Option 1 opens a local page that asks where the summary should run (Claude Code, Codex, or an API key), how to transcribe, and where to save notes, then lets you paste a link and see the note. Option 2 asks the same questions in the terminal. Both write `~/.config/shortform-notes/config.env`.
 
-**Step 1. Where the summary runs.** Claude Code and Codex need no key. The API options show a key field; the key is written to the local config file and nowhere else.
+![Setup page: where the summary runs](docs/screenshots/step-1.png)
 
-![Step 1: where the summary runs](docs/screenshots/step-1.png)
-
-**Step 2. How audio is transcribed.** OpenAI (best quality, needs a key), offline Whisper (free, private, downloads a 75 MB model on first use), or skip. The same step has the optional on-screen text (OCR) switch, off by default, with a cost estimate that updates as you change the frame rate.
-
-![Step 2: transcription](docs/screenshots/step-2.png)
-
-**Step 3. Where notes are saved.** Any folder. For Obsidian, use a folder inside the vault. An optional "who the notes are for" line shapes the summary.
-
-![Step 3: save location](docs/screenshots/step-3.png)
-
-**Step 4. Try one.** Paste a link and the note appears below with its title, summary, takeaways, and the full file. If you chose Claude Code or Codex, this page also shows a prompt to paste into that tool once; after that, pasting a reel link in any session imports it.
-
-![Step 4: import a link, plus the Claude Code prompt](docs/screenshots/step-4.png)
-
-### Terminal setup
-
-Option 2 runs `shortform-notes setup`, a numbered wizard that asks the same four questions and writes the same config file:
-
-```
-1/4  Where should the summary run?
-  1) Claude Code: uses your Claude subscription through the claude CLI, no API key
-  2) Codex CLI: uses your ChatGPT subscription through the codex CLI, no API key
-  3) OpenAI API key: pay per use, about $0.001 per reel; also enables the best transcription
-  4) Anthropic API key: pay per use with Claude via the API
-  5) No summary: save the caption, transcript and metadata only
-Choose 1-5 [1]:
-```
-
-Both paths write `~/.config/shortform-notes/config.env`. Once it exists, `./start.sh` opens the import page directly, `./start.sh setup` re-runs the wizard, and `./start.sh <url>` imports from the terminal. Nothing on your machine is scanned; both paths only ask.
+Once a config exists, `./start.sh` opens the import page directly, `./start.sh setup` re-runs the wizard, and `./start.sh <url>` imports from the terminal. Nothing on your machine is scanned; both paths only ask.
 
 ### Everyday use
 
