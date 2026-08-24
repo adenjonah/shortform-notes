@@ -131,7 +131,7 @@ def run_setup(ask=input, ask_secret=getpass.getpass) -> Path:
     _say(f"Saved {path}")
     _say()
     _say("Next: import a link with")
-    _say("  shortform-notes https://www.instagram.com/reel/...")
+    _say("  shortform-notes https://www.instagram.com/p/DS3DPehEnpA/")
     if summary in ("claude-code", "codex"):
         tool = "Claude Code" if summary == "claude-code" else "Codex"
         _say(f"To use it inside {tool}, run: shortform-notes web  and copy the prompt on the last page.")

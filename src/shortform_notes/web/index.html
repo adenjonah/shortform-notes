@@ -144,7 +144,7 @@
     <p class="lead" id="summaryLine"></p>
     <div class="msg warn hidden" id="cliWarn"></div>
     <div class="row">
-      <input type="url" id="tryUrl" placeholder="https://www.instagram.com/reel/... or a TikTok or YouTube Shorts URL">
+      <input type="url" id="tryUrl" placeholder="https://www.instagram.com/p/DS3DPehEnpA/ or a TikTok or YouTube Shorts URL">
       <button class="primary" id="tryBtn" onclick="tryImport()" style="flex:0 0 auto">Import</button>
     </div>
     <div class="msg" id="tryMsg"></div>
@@ -328,7 +328,7 @@ function renderDone() {
   const ocrPart = c.SHORTFORM_NOTES_OCR === '1' ? `, on-screen text: ${c.SHORTFORM_NOTES_OCR_PROVIDER || 'local'} at ${c.SHORTFORM_NOTES_OCR_FPS || '1'} frames/s` : '';
   $('summaryLine').textContent = `Summaries: ${NAMES[c.SHORTFORM_NOTES_SUMMARY_PROVIDER] || 'auto'}, transcripts: ${NAMES[c.SHORTFORM_NOTES_TRANSCRIBE_PROVIDER] || c.SHORTFORM_NOTES_TRANSCRIBE_PROVIDER || 'auto'}${ocrPart}. Notes saved to ${dir.replace(st.home, '~')}.`;
   $('cfgPath').textContent = st.config_path.replace(st.home, '~');
-  $('cmdCli').textContent = `cd "${st.repo_dir}"\n./start.sh https://www.instagram.com/reel/...`;
+  $('cmdCli').textContent = `cd "${st.repo_dir}"\n./start.sh https://www.instagram.com/p/DS3DPehEnpA/`;
   const kind = c.SHORTFORM_NOTES_SUMMARY_PROVIDER;
   const show = kind === 'claude-code' || kind === 'codex';
   $('skillify').classList.toggle('hidden', !show);

@@ -3,15 +3,17 @@
 Turn Instagram Reels, TikToks and YouTube Shorts into Markdown notes: caption, transcript, and a short summary with the takeaways. One command, no API key required.
 
 ```
-$ shortform-notes https://www.instagram.com/reel/DQCkNLtgqEe/
+$ shortform-notes https://www.instagram.com/p/DS3DPehEnpA/
 
-saved ~/shortform-notes/2025-10-20-teddysphotos-symmetry-with-karan-aujla-play-remixes-ep.md  (sources: caption, transcript)
-  Symmetry with Karan Aujla, Play Remixes EP
-  The video promotes the song Symmetry featuring Karan Aujla, released as part of the Play remixes EP. The creator says Karan Aujla taught them Punjabi for a bit in the video and asks viewers how they did.
-  - Song: Symmetry featuring Karan Aujla (@karanaujla)
-  - Released as part of the Play remixes EP, out now
-  - Karan Aujla taught the creator Punjabi for the bit shown in the video
-  - The creator asks viewers to judge how their Punjabi sounded
+saved ~/shortform-notes/2025-12-29-recipeincaption-crispy-arayes-recipe-with-tahini-sauce.md  (sources: caption, transcript)
+  Crispy Arayes Recipe with Tahini Sauce
+  A recipe for arayes, Middle Eastern meat-stuffed pitas that are seared, baked, and served with a garlic tahini sauce.
+  - Ingredients: 4 small pitas, 1 yellow onion, 7 garlic cloves, 2 tbsp tomato paste, 1/3 cup parsley, 1/3 cup cilantro (optional), 1 tbsp olive oil, 1 lb lean ground beef, spices (1 tsp salt, 1 tsp black pepper, 1 tsp cinnamon, 2 tsp cumin, 2 tsp paprika, 1 tsp allspice)
+  - Garlic tahini sauce: 1/2 cup Greek yogurt, 3 tbsp tahini, juice of 1/2 lemon, 2 garlic cloves, 2 tbsp olive oil, 1/4 cup parsley, 1/4 cup cilantro, 1 tsp each cumin, salt, pepper, paprika
+  - Preheat the oven to 350F (175C). Grate the onion and squeeze out the liquid.
+  - Mix the beef, tomato paste, garlic, spices, herbs, and onion for about 2 minutes.
+  - Stuff each pita half, brush with olive oil, sear meat side down 1-2 minutes until golden.
+  - Bake 10-15 minutes. Make the sauce while it bakes.
 ```
 
 The summary can run through Claude Code or Codex (the subscription you already have), or through an OpenAI or Anthropic API key. Transcripts come from OpenAI or from Whisper running offline on your own machine. Everything degrades on its own: with nothing configured you still get the caption and metadata.
@@ -73,7 +75,7 @@ Both paths write `~/.config/shortform-notes/config.env`. Once it exists, `./star
 ### Everyday use
 
 ```bash
-./start.sh https://www.tiktok.com/@chef/video/7301234567890123456     # one link
+./start.sh https://www.instagram.com/p/DS3DPehEnpA/                    # one link
 ./start.sh <url1> <url2> <url3>                                        # several, one note each
 ./start.sh <url> --json                                                # machine-readable output
 ```
@@ -146,9 +148,9 @@ shortform-notes --transcribe local <url>     # auto-detected once faster-whisper
 Many recipe and tip videos put the details in text overlays rather than speech. OCR reads those. It is off by default because it downloads the whole video instead of just the audio, takes longer, and on a paid backend costs extra per frame.
 
 ```bash
-shortform-notes --ocr <url>                              # local OCR, free
-shortform-notes --ocr --ocr-provider openai <url>        # gpt-4o-mini vision
-shortform-notes --ocr --ocr-fps 0 <url>                  # read every frame instead of one per second
+shortform-notes --ocr https://www.instagram.com/p/DS3DPehEnpA/            # local OCR, free
+shortform-notes --ocr --ocr-provider openai https://www.instagram.com/p/DS3DPehEnpA/   # gpt-4o-mini vision
+shortform-notes --ocr --ocr-fps 0 https://www.instagram.com/p/DS3DPehEnpA/   # read every frame instead of one per second
 ```
 
 How it works: frames are sampled at one per second (`--ocr-fps 1`, the default). `--ocr-fps 0` reads every frame, for fast-cut videos where text flashes for less than a second; `--ocr-fps 4` is a middle ground. Consecutive frames that look the same are dropped before any OCR call, so a video with a static overlay costs far less than the estimate. What is read goes into the note as a timestamped "On-screen text" section and into the summary prompt.
@@ -202,35 +204,50 @@ Several links can be passed in one command; each becomes its own note.
 ---
 type: reel
 platform: instagram
-source: https://www.instagram.com/reel/DQCkNLtgqEe/
-creator: "@teddysphotos"
-posted: 2025-10-20
+source: https://www.instagram.com/reel/DS3DPehEnpA/
+creator: "@recipeincaption"
+creator_name: "Ben Chelin"
+posted: 2025-12-29
 imported: 2026-08-24
-duration_seconds: 26
-sources: [caption, transcript]
+duration_seconds: 36
+sources: [caption, transcript, screen_text]
 tags: [reel]
 ---
 
-# Symmetry with Karan Aujla on Play Remixes EP
+# Crispy Arayes Recipe with Tahini Sauce
 
-**Source:** [instagram, @teddysphotos](https://www.instagram.com/reel/DQCkNLtgqEe/)
+**Source:** [instagram, @recipeincaption](https://www.instagram.com/reel/DS3DPehEnpA/)
 
 ## Summary
-...
+A recipe for arayes, Middle Eastern meat-stuffed pitas ...
 
 ## Key takeaways
+- Ingredients: 4 small pitas, 1 yellow onion, 7 garlic cloves, 2 tbsp tomato paste ...
+- Preheat the oven to 350F (175C). Grate the onion and squeeze out the liquid.
 - ...
 
 ## Caption
-> verbatim caption
+> Crispy, Juicy Middle Eastern Meat-Stuffed Pitas with a Garlic Tahini Sauce
+>
+> Ingredients:
+> -4 small pitas, cut in half
+> -1 yellow onion, grated & squeezed dry
+> ...
 
 ## Transcript
-verbatim transcript
+Dinners you'll actually make, episode 19. Arayes that are surprisingly so easy ... Just combine ground beef with these spices, tomato paste, garlic, onion, and parsley. Halve the pitas into pockets, stuff with the meat, and brush with olive oil before cooking ...
 
 ## On-screen text
-[00:03] 2 cups flour, 1 tsp salt
-[00:11] bake 425F 20 min
+[00:00] dinners you'll actually make
+[00:03] arayes
+[00:08] spices -cumin -paprika -allspice -cinnamon -salt -pepper
+[00:09] tomato paste
+[00:10] parsley
+[00:11] pitas
+[00:23] Ingredients 4 small pitas cut in half grated & squeezed dry ...
 ```
+
+Everything after the takeaways is verbatim; the last section only appears when OCR is on. On this reel the OCR lines are read by the free local model, which is why a few are rough.
 
 The last section only appears when OCR is on.
 
@@ -275,7 +292,7 @@ Both call the same `import_reel()` function, which can also be used directly:
 import asyncio
 from shortform-notes import import_reel
 
-result = asyncio.run(import_reel("https://youtube.com/shorts/dQw4w9WgXcQ"))
+result = asyncio.run(import_reel("https://www.instagram.com/p/DS3DPehEnpA/"))
 print(result.path, result.takeaways)
 ```
 
