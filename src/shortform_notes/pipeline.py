@@ -6,7 +6,8 @@ Each source is independent and the note records which ones succeeded:
                 yt-dlp ``description``. Cheap and often the whole recipe.
   2. transcript yt-dlp ``bestaudio``, then OpenAI transcription or local faster-whisper.
   3. summary    one LLM call: OpenAI / Anthropic API, or the ``claude`` / ``codex``
-                CLI using an existing subscription. Best-effort.
+                CLI using an existing subscription. Best-effort. With ``vision``
+                on, the sampled video frames ride along in that same call.
 
 Typical cost with everything on: about $0.004 per minute-long reel.
 """
@@ -20,9 +21,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from shortform_notes import instagram, media, ocr, urls
-from shortform_notes.config import Settings, load_settings
-from shortform_notes.note import ReelContent, build_note, note_filename
-from shortform_notes.summarize import summarize
+from shortform_notes.config import AGENTIC_VISION_PROVIDERS, Settings, load_settings
+from shortform_notes.note import ReelContent, Scene, build_note, note_filename
+from shortform_notes.summarize import summarize, vision_estimate
 from shortform_notes.transcribe import transcribe
 
 logger = logging.getLogger(__name__)
@@ -40,9 +41,10 @@ class ReelImportResult:
     takeaways: tuple[str, ...]
     sources: tuple[str, ...]
     warnings: tuple[str, ...]
+    scenes: tuple[Scene, ...] = ()  # only under --vision; see summarize.summary_schema
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             "path": str(self.path),
             "title": self.title,
             "summary": self.summary,
@@ -50,15 +52,30 @@ class ReelImportResult:
             "sources": list(self.sources),
             "warnings": list(self.warnings),
         }
+        if self.scenes:  # absent, not empty, so a run without vision looks exactly as it did
+            data["scenes"] = [scene.to_dict() for scene in self.scenes]
+        return data
 
 
-async def gather_content(url: str, tmpdir: str, settings: Settings) -> ReelContent:
-    """Collect caption and transcript from every source that works."""
+async def gather_content(url: str, tmpdir: str, settings: Settings) -> tuple[ReelContent, list[ocr.Frame]]:
+    """Collect caption, transcript and (for OCR or vision) sampled video frames from every source that works.
+
+    The frames come back alongside the note content because they are an input to
+    the summary call, not something the note itself renders.
+    """
     platform = urls.platform_for(url)
     clean_url = urls.strip_tracking(url)
     embed: instagram.InstagramEmbed | None = None
     downloaded: media.DownloadedMedia | None = None
     warnings: list[str] = []
+    want_frames = settings.ocr or settings.can_see_video
+    if settings.vision and not settings.can_see_video:
+        warnings.append("Vision skipped: no summary backend is configured, so nothing would see the frames")
+    if settings.vision_agentic and settings.can_see_video and not settings.vision_is_agentic:
+        warnings.append(
+            f"Agentic vision needs an agent backend that can open the frames "
+            f"({', '.join(AGENTIC_VISION_PROVIDERS)}); {settings.summary_provider} ran one-shot instead"
+        )
 
     if platform == "instagram":
         shortcode = await instagram.resolve_shortcode(url)
@@ -72,7 +89,7 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> ReelConte
 
     try:
         downloaded = await media.download_media(
-            clean_url, tmpdir, download=settings.can_transcribe or settings.ocr, video=settings.ocr
+            clean_url, tmpdir, download=settings.can_transcribe or want_frames, video=want_frames
         )
         warnings.extend(downloaded.warnings)
     except media.MediaFetchError as exc:
@@ -92,13 +109,24 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> ReelConte
             'Transcription skipped (set OPENAI_API_KEY, or pip install "shortform-notes[local]" for offline Whisper)'
         )
 
+    duration = (embed.duration if embed else None) or (downloaded.duration if downloaded else None) or 0
+
+    # Sampled once and shared: the summary call sees the frames, OCR reads the same ones.
+    frames: list[ocr.Frame] = []
+    if settings.can_see_video and downloaded and downloaded.video_path:
+        logger.info("vision (%s): %s", settings.summary_provider, vision_estimate(duration, settings).describe())
+        try:
+            frames = await ocr.sample_frames(downloaded.video_path, settings)
+        except Exception as exc:  # noqa: BLE001 (surface as a warning; a text-only summary still runs)
+            warnings.append(f"Vision failed: frames could not be sampled: {exc}")
+    elif settings.can_see_video:
+        warnings.append("Vision skipped: no video could be downloaded")
+
     screen_text = None
     if settings.ocr and downloaded and downloaded.video_path:
-        duration = (embed.duration if embed else None) or downloaded.duration or 0
-        est = ocr.estimate(duration, settings)
-        logger.info("OCR: %s", est.describe())
+        logger.info("OCR: %s", ocr.estimate(duration, settings).describe())
         try:
-            screen_text, frames_read = await ocr.read_screen_text(downloaded.video_path, settings)
+            screen_text, frames_read = await ocr.read_screen_text(downloaded.video_path, settings, frames or None)
             if not screen_text:
                 warnings.append(f"OCR read {frames_read} frames and found no on-screen text")
         except Exception as exc:  # noqa: BLE001 (surface as a warning, keep the rest of the note)
@@ -107,7 +135,14 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> ReelConte
         warnings.append("OCR skipped: no video could be downloaded")
 
     sources = tuple(
-        s for s, present in (("caption", caption), ("transcript", transcript), ("screen_text", screen_text)) if present
+        s
+        for s, present in (
+            ("caption", caption),
+            ("transcript", transcript),
+            ("screen_text", screen_text),
+            ("video", frames),
+        )
+        if present
     )
     if not sources:
         raise ReelImportError("; ".join(warnings) or "no caption or audio available")
@@ -115,7 +150,7 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> ReelConte
     posted = (
         datetime.fromtimestamp(downloaded.timestamp, tz=timezone.utc) if downloaded and downloaded.timestamp else None
     )
-    return ReelContent(
+    content = ReelContent(
         url=clean_url,
         platform=platform,
         caption=caption,
@@ -130,6 +165,7 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> ReelConte
         sources=sources,
         warnings=tuple(warnings),
     )
+    return content, frames
 
 
 def _unique_path(directory: Path, filename: str, now: datetime) -> Path:
@@ -148,15 +184,23 @@ async def import_reel(url: str, settings: Settings | None = None, now: datetime 
         raise ReelImportError(f"not a supported Instagram / TikTok / YouTube Shorts link: {url}")
 
     with tempfile.TemporaryDirectory(prefix="shortform-notes-") as tmpdir:
-        content = await gather_content(clean, tmpdir, settings)
+        content, frames = await gather_content(clean, tmpdir, settings)
     result = await summarize(
-        content.caption, content.transcript, settings, title_hint=content.title, screen_text=content.screen_text
+        content.caption,
+        content.transcript,
+        settings,
+        title_hint=content.title,
+        screen_text=content.screen_text,
+        frames=frames,
     )
 
     settings.output_dir.mkdir(parents=True, exist_ok=True)
     path = _unique_path(
         settings.output_dir, note_filename(content.posted or now, content.creator_handle, result.title), now
     )
-    path.write_text(build_note(content, result.title, result.summary, result.takeaways, now), encoding="utf-8")
-    logger.info("reel imported: %s sources=%s", path, content.sources)
-    return ReelImportResult(path, result.title, result.summary, result.takeaways, content.sources, content.warnings)
+    note = build_note(content, result.title, result.summary, result.takeaways, now, result.scenes)
+    path.write_text(note, encoding="utf-8")
+    logger.info("reel imported: %s sources=%s scenes=%d", path, content.sources, len(result.scenes))
+    return ReelImportResult(
+        path, result.title, result.summary, result.takeaways, content.sources, content.warnings, result.scenes
+    )

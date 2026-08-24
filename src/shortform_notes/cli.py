@@ -10,7 +10,9 @@ import sys
 
 from shortform_notes import __version__
 from shortform_notes.config import OCR_PROVIDERS, SUMMARY_PROVIDERS, TRANSCRIBE_PROVIDERS, load_settings
+from shortform_notes.ocr import FRAMES_PER_GRID
 from shortform_notes.pipeline import ReelImportError, import_reel
+from shortform_notes.summarize import MAX_VISION_FRAMES, vision_estimate
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -51,8 +53,27 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-ocr", action="store_true", help="turn OCR off even if the config enables it")
     parser.add_argument("--ocr-provider", choices=list(OCR_PROVIDERS), help="local (free), openai, or anthropic")
     parser.add_argument(
-        "--ocr-fps", type=float, help="frames sampled per second for OCR; default 1, use 0 for every frame"
+        "--ocr-fps",
+        type=float,
+        help=(
+            "sample frames on a clock instead of at the video's cuts, for both OCR and --vision; "
+            "1 is one per second, 0 is every frame"
+        ),
     )
+    parser.add_argument(
+        "--vision",
+        nargs="?",
+        const="on",
+        choices=("on", "agentic"),
+        help=(
+            "show the summary model the video: sampled frames are tiled into timestamped contact sheets "
+            f"and sent with the summary call (any backend but 'none'; at most {MAX_VISION_FRAMES} frames "
+            f"per video, {FRAMES_PER_GRID} to a sheet). `--vision agentic` additionally lets the "
+            "claude-code and codex backends open the full-resolution frames themselves; slower, but it "
+            "can read fine print and check a fast cut the sheets blur"
+        ),
+    )
+    parser.add_argument("--no-vision", action="store_true", help="turn vision off even if the config enables it")
     parser.add_argument("--json", action="store_true", help="print machine-readable JSON instead of text")
     parser.add_argument("-v", "--verbose", action="store_true", help="show fetch/debug logs")
     parser.add_argument("--version", action="version", version=f"shortform-notes {__version__}")
@@ -69,6 +90,8 @@ def _print_result(result, as_json: bool) -> None:
         print(f"  {result.summary}")
     for t in result.takeaways:
         print(f"  - {t}")
+    if result.scenes:
+        print(f"  ({len(result.scenes)} scenes under 'Video breakdown' in the note)")
     for w in result.warnings:
         print(f"  warning: {w}")
 
@@ -81,14 +104,20 @@ async def _run(urls: list[str], args: argparse.Namespace) -> int:
         ocr=False if args.no_ocr else (True if args.ocr else None),
         ocr_provider=args.ocr_provider,
         ocr_fps=args.ocr_fps,
+        vision=False if args.no_vision else (True if args.vision else None),
+        vision_agentic=False if args.no_vision else (True if args.vision == "agentic" else None),
     )
+    rate = f"{settings.ocr_fps:g} frames/s" if settings.ocr_fps else "every frame"
     if settings.ocr and settings.ocr_provider != "local" and not args.json:
         from shortform_notes.ocr import estimate
 
-        rate = f"{settings.ocr_fps:g} frames/s" if settings.ocr_fps else "every frame"
         for secs in (30, 60):
             note = estimate(secs, settings).describe()
             print(f"OCR on ({settings.ocr_provider}, {rate}): a {secs}s video is {note}", file=sys.stderr)
+    if settings.can_see_video and not args.json:
+        # One line, not two: past the frame cap every duration sends the same number of sheets.
+        note = vision_estimate(60, settings).describe()
+        print(f"vision on ({settings.summary_provider}, {rate}): a 60s video sends {note}", file=sys.stderr)
     failures = 0
     for url in urls:
         try:

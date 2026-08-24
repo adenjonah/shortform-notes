@@ -27,8 +27,11 @@ def settings(**overrides) -> config.Settings:
         ocr=False,
         ocr_provider="local",
         ocr_fps=1.0,
-        ocr_openai_model="gpt-4o-mini",
-        ocr_anthropic_model="claude-opus-5",
+        ocr_openai_model="gpt-5-mini",
+        ocr_anthropic_model="claude-sonnet-5",
+        vision=False,
+        vision_agentic=False,
+        fps_explicit=False,
     )
     return config.Settings(**{**base, **overrides})
 
@@ -39,10 +42,11 @@ def settings(**overrides) -> config.Settings:
 @pytest.mark.parametrize(
     "openai_key,anthropic_key,on_path,expected",
     [
-        ("sk", None, {"claude"}, "openai"),
-        (None, "sk-ant", {"claude"}, "anthropic"),
+        ("sk", None, {"claude"}, "claude-code"),  # a subscription CLI beats spending per token
+        ("sk", "sk-ant", {"codex"}, "codex"),
         (None, None, {"claude", "codex"}, "claude-code"),
-        (None, None, {"codex"}, "codex"),
+        ("sk", None, set(), "openai"),  # no CLI: the key is all there is
+        (None, "sk-ant", set(), "anthropic"),
         (None, None, set(), "none"),
     ],
 )
@@ -111,7 +115,7 @@ def test_codex_argv_is_read_only_and_reads_stdin():
     argv = summarize.codex_argv(settings(summary_provider="codex"), "/tmp/last.txt")
     assert argv[:2] == ["codex", "exec"]
     assert argv[argv.index("--sandbox") + 1] == "read-only"
-    assert argv[argv.index("--ask-for-approval") + 1] == "never"
+    assert "--ask-for-approval" not in argv  # removed from `codex exec` in 0.147
     assert argv[argv.index("--output-last-message") + 1] == "/tmp/last.txt"
     assert argv[-1] == "-"
 

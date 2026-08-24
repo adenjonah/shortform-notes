@@ -119,9 +119,9 @@
     <p class="lead">Many recipe and tip videos put the details in text overlays rather than speech. Turning this on downloads the full video, samples frames, and reads the text in them. It is slower, and on a paid backend it costs extra per frame. Off by default.</p>
     <div class="opts" id="ocrOpts"></div>
     <div class="field hidden" id="ocrFpsField">
-      <label>Frames read per second</label>
-      <input type="text" id="SHORTFORM_NOTES_OCR_FPS" value="1">
-      <div class="hint">1 is the default and catches overlays that stay on screen. Use 0 to read every frame (about 30 times the frames and cost) for fast-cut videos. Identical consecutive frames are skipped before any paid call.</div>
+      <label>Frames read per second (optional)</label>
+      <input type="text" id="SHORTFORM_NOTES_OCR_FPS" value="" placeholder="automatic — one frame per cut">
+      <div class="hint">Left empty, frames are read at the video's cuts, which is usually what you want. Fill it in to read on a clock instead: 1 catches overlays that stay on screen, 0 reads every frame (about 30 times the frames and cost). Identical consecutive frames are skipped before any paid call.</div>
       <div class="hint" id="ocrEstimate"></div>
     </div>
     <div class="msg bad hidden" id="step1Err"></div>
@@ -169,8 +169,9 @@
 const $ = (id) => document.getElementById(id);
 let st = null;
 const state = { summary: 'claude-code', transcribe: 'local', ocr: 'off' };
-// Per-frame prices used for the estimate shown to the user (vendor pricing pages, 2026-08-24).
-const OCR_USD_PER_FRAME = { local: 0, openai: 2833 * 0.15 / 1e6, anthropic: (720 * 1024 / 750) * 5.0 / 1e6 };
+// Per-frame prices for the estimate shown to the user (vendor pricing pages, 2026-08-24). Keep in
+// step with ocr.py: gpt-5-mini bills 32x32 patches, Claude bills width*height/750.
+const OCR_USD_PER_FRAME = { local: 0, openai: 691 * 0.25 / 1e6, anthropic: (576 * 1024 / 750) * 2.0 / 1e6 };
 const NAMES = { 'claude-code': 'Claude Code', codex: 'Codex', openai: 'OpenAI API', anthropic: 'Anthropic API', none: 'no summary', local: 'offline Whisper' };
 
 async function boot() {
@@ -227,7 +228,7 @@ function renderTranscribeOpts() {
   const hasKey = !!openaiKey();
   if (!state.transcribe) state.transcribe = hasKey ? 'openai' : 'local';
   const choices = [
-    { id: 'openai', title: 'OpenAI API', desc: 'gpt-4o-mini-transcribe, about $0.003 per minute of video. Handles music and non-English speech well.' + (hasKey ? '' : ' Needs an OpenAI API key.') },
+    { id: 'openai', title: 'OpenAI API', desc: 'gpt-transcribe, about $0.0045 per minute of video. Handles music and non-English speech well.' + (hasKey ? '' : ' Needs an OpenAI API key.') },
     { id: 'local', title: 'Offline Whisper on this computer', desc: 'Runs locally, no data leaves the machine, no API key needed. First run downloads a model of about 75 MB. Less accurate on music-heavy or non-English audio.' },
     { id: 'none', title: 'No transcript', desc: 'Caption and metadata only. No audio is downloaded.' },
   ];
@@ -244,8 +245,8 @@ function renderTranscribeOpts() {
 const OCR = [
   { id: 'off', title: 'Off', desc: 'Caption and transcript only.' },
   { id: 'local', title: 'On, read locally', desc: 'Free. Runs an OCR model on this computer. About 10 seconds of extra work for a 30 second video.' },
-  { id: 'openai', title: 'On, OpenAI vision', desc: 'gpt-4o-mini reads the frames. Needs an OpenAI API key.' },
-  { id: 'anthropic', title: 'On, Claude vision', desc: 'claude-opus-5 reads the frames. Needs an Anthropic API key. The most accurate and the most expensive option.' },
+  { id: 'openai', title: 'On, OpenAI vision', desc: 'gpt-5-mini reads the frames. Needs an OpenAI API key.' },
+  { id: 'anthropic', title: 'On, Claude vision', desc: 'claude-sonnet-5 reads the frames. Needs an Anthropic API key. The most accurate and the most expensive option.' },
 ];
 function renderOcrOpts() {
   $('ocrOpts').innerHTML = OCR.map(c => `
@@ -255,7 +256,7 @@ function renderOcrOpts() {
       <div class="d">${c.desc}</div>
     </label>`).join('');
   $('ocrOpts').querySelectorAll('input').forEach(r => r.addEventListener('change', () => { state.ocr = r.value; syncOcrUI(); }));
-  $('SHORTFORM_NOTES_OCR_FPS').value = st.current.SHORTFORM_NOTES_OCR_FPS || '1';
+  $('SHORTFORM_NOTES_OCR_FPS').value = st.current.SHORTFORM_NOTES_OCR_FPS || '';
   syncOcrUI();
 }
 function syncOcrUI() {
@@ -265,7 +266,7 @@ function syncOcrUI() {
 }
 function updateOcrEstimate() {
   if (state.ocr === 'off') return;
-  const fps = parseFloat($('SHORTFORM_NOTES_OCR_FPS').value);
+  const fps = parseFloat($('SHORTFORM_NOTES_OCR_FPS').value);  // blank means cut-aware sampling, which lands near 1/s
   const rate = isNaN(fps) || fps < 0 ? 1 : fps;
   const frames = (secs) => Math.ceil(secs * (rate === 0 ? 30 : rate));
   const per = OCR_USD_PER_FRAME[state.ocr] || 0;
@@ -325,7 +326,7 @@ function skillifyPrompt(kind) {
 }
 function renderDone() {
   const c = st.current, dir = c.SHORTFORM_NOTES_DIR || '~/shortform-notes';
-  const ocrPart = c.SHORTFORM_NOTES_OCR === '1' ? `, on-screen text: ${c.SHORTFORM_NOTES_OCR_PROVIDER || 'local'} at ${c.SHORTFORM_NOTES_OCR_FPS || '1'} frames/s` : '';
+  const ocrPart = c.SHORTFORM_NOTES_OCR === '1' ? `, on-screen text: ${c.SHORTFORM_NOTES_OCR_PROVIDER || 'local'} ${c.SHORTFORM_NOTES_OCR_FPS ? `at ${c.SHORTFORM_NOTES_OCR_FPS} frames/s` : 'at each cut'}` : '';
   $('summaryLine').textContent = `Summaries: ${NAMES[c.SHORTFORM_NOTES_SUMMARY_PROVIDER] || 'auto'}, transcripts: ${NAMES[c.SHORTFORM_NOTES_TRANSCRIBE_PROVIDER] || c.SHORTFORM_NOTES_TRANSCRIBE_PROVIDER || 'auto'}${ocrPart}. Notes saved to ${dir.replace(st.home, '~')}.`;
   $('cfgPath').textContent = st.config_path.replace(st.home, '~');
   $('cmdCli').textContent = `cd "${st.repo_dir}"\n./start.sh https://www.instagram.com/p/DS3DPehEnpA/`;
