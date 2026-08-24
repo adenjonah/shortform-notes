@@ -94,8 +94,8 @@ def run_setup(ask=input, ask_secret=getpass.getpass) -> Path:
         current.get("SHORTFORM_NOTES_OCR_PROVIDER", "off") if current.get("SHORTFORM_NOTES_OCR") == "1" else "off"
     )
     _say("Optional: read on-screen text from video frames. This downloads the full video and reads")
-    _say("one frame per second (change with SHORTFORM_NOTES_OCR_FPS; 0 means every frame, which costs")
-    _say("about 30 times more on a paid backend).")
+    _say("one frame per cut, or one per second if ffmpeg is not installed. Set SHORTFORM_NOTES_OCR_FPS")
+    _say("to read on a clock instead; 0 means every frame, which costs about 30 times more on a paid backend.")
     ocr_choice = _pick("Read on-screen text?", OCR_CHOICES, ocr_default, ask)
     if ocr_choice == "openai" and not openai_key:
         openai_key = _ask_secret("OpenAI API key", "", ask_secret)

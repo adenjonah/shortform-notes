@@ -107,7 +107,7 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> tuple[Ree
     if settings.can_see_video and downloaded and downloaded.video_path:
         logger.info("vision (%s): %s", settings.summary_provider, vision_estimate(duration, settings).describe())
         try:
-            frames = await ocr.extract_frames(downloaded.video_path, settings.ocr_fps)
+            frames = await ocr.sample_frames(downloaded.video_path, settings)
         except Exception as exc:  # noqa: BLE001 (surface as a warning; a text-only summary still runs)
             warnings.append(f"Vision failed: frames could not be sampled: {exc}")
     elif settings.can_see_video:

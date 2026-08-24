@@ -46,6 +46,7 @@ def settings(tmp_path, **over) -> config.Settings:
         ocr_openai_model="gpt-4o-mini",
         ocr_anthropic_model="claude-opus-5",
         vision=True,
+        fps_explicit=False,
     )
     return config.Settings(**{**base, **over})
 
@@ -314,7 +315,7 @@ def test_vision_estimate_is_free_on_subscription_backends(tmp_path):
 async def test_pipeline_sends_frames_and_records_the_video_source(tmp_path):
     with (
         patch.object(media, "download_media", AsyncMock(return_value=video())) as download,
-        patch.object(ocr, "extract_frames", AsyncMock(return_value=frames(3))),
+        patch.object(ocr, "sample_frames", AsyncMock(return_value=frames(3))),
         patch("shortform_notes.summarize._summarize_openai", AsyncMock(return_value=REPLY)) as backend,
     ):
         result = await import_reel("https://www.tiktok.com/@c/video/1", settings(tmp_path))
@@ -327,7 +328,7 @@ async def test_pipeline_sends_frames_and_records_the_video_source(tmp_path):
 async def test_vision_reuses_the_frames_ocr_would_have_sampled(tmp_path):
     with (
         patch.object(media, "download_media", AsyncMock(return_value=video())),
-        patch.object(ocr, "extract_frames", AsyncMock(return_value=frames(3))) as extract,
+        patch.object(ocr, "sample_frames", AsyncMock(return_value=frames(3))) as extract,
         patch.object(ocr, "read_screen_text", AsyncMock(return_value=("[00:01] 2 cups flour", 3))) as read,
         patch("shortform_notes.summarize._summarize_openai", AsyncMock(return_value=REPLY)),
     ):
@@ -341,7 +342,7 @@ async def test_vision_on_every_backend_downloads_the_video(tmp_path):
     for provider in ("openai", "anthropic", "claude-code", "codex"):
         with (
             patch.object(media, "download_media", AsyncMock(return_value=video())) as download,
-            patch.object(ocr, "extract_frames", AsyncMock(return_value=frames(2))),
+            patch.object(ocr, "sample_frames", AsyncMock(return_value=frames(2))),
             patch(f"shortform_notes.summarize._summarize_{provider.replace('-', '_')}", AsyncMock(return_value=REPLY)),
         ):
             result = await import_reel(
@@ -362,7 +363,7 @@ async def test_no_summary_backend_warns_and_skips_the_download(tmp_path):
 async def test_frame_sampling_failure_is_a_warning(tmp_path):
     with (
         patch.object(media, "download_media", AsyncMock(return_value=video())),
-        patch.object(ocr, "extract_frames", AsyncMock(side_effect=RuntimeError("no codec"))),
+        patch.object(ocr, "sample_frames", AsyncMock(side_effect=RuntimeError("no codec"))),
         patch("shortform_notes.summarize._summarize_openai", AsyncMock(return_value=REPLY)),
     ):
         result = await import_reel("https://www.tiktok.com/@c/video/1", settings(tmp_path))

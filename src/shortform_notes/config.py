@@ -57,6 +57,7 @@ class Settings:
     ocr_openai_model: str
     ocr_anthropic_model: str  # who the note is for; shapes the summary prompt
     vision: bool  # attach the sampled frames to the summary call so the model sees the video
+    fps_explicit: bool  # a rate was asked for, so use it instead of ffmpeg's cut-aware sampling
 
     @property
     def can_transcribe(self) -> bool:
@@ -192,4 +193,5 @@ def load_settings(
         ocr_openai_model=env.get("SHORTFORM_NOTES_OCR_OPENAI_MODEL", DEFAULT_OCR_OPENAI_MODEL),
         ocr_anthropic_model=env.get("SHORTFORM_NOTES_OCR_ANTHROPIC_MODEL", DEFAULT_OCR_ANTHROPIC_MODEL),
         vision=vision_on,
+        fps_explicit=ocr_fps is not None or bool(fps_raw),
     )

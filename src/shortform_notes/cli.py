@@ -55,7 +55,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--ocr-fps",
         type=float,
-        help="frames sampled per second, for both OCR and --vision; default 1, use 0 for every frame",
+        help=(
+            "sample frames on a clock instead of at the video's cuts, for both OCR and --vision; "
+            "1 is one per second, 0 is every frame"
+        ),
     )
     parser.add_argument(
         "--vision",

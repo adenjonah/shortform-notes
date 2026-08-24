@@ -60,7 +60,7 @@ Or, from Claude Code after pasting the prompt from step 4: drop a link into the 
 pipx install "shortform-notes[all] @ git+https://github.com/adenjonah/shortform-notes"
 ```
 
-Requires Python 3.10+. ffmpeg is not needed. Extras:
+Requires Python 3.10+. ffmpeg is never required; when it happens to be installed, `--ocr` and `--vision` sample frames at the video's cuts instead of on a clock. Extras:
 
 | Extra | Adds | Use it when |
 |---|---|---|
@@ -68,7 +68,7 @@ Requires Python 3.10+. ffmpeg is not needed. Extras:
 | `openai` | API transcription + summaries | you have `OPENAI_API_KEY` |
 | `anthropic` | Claude API summaries | you have `ANTHROPIC_API_KEY` |
 | `local` | offline Whisper transcription (faster-whisper, ~75 MB model on first run) | you want transcripts without a key |
-| `ocr` | frame sampling (OpenCV) plus on-screen text from those frames (RapidOCR, no key); also what `--vision` samples with | the details are in text overlays or on screen, not in speech |
+| `ocr` | frame sampling (OpenCV, plus `ffmpeg` for cut-aware sampling if you have it) and on-screen text from those frames (RapidOCR, no key); also what `--vision` samples with | the details are in text overlays or on screen, not in speech |
 | `mcp` | MCP server for Claude Code / Claude Desktop | you want it as an editor tool |
 | `all` | `openai` + `anthropic` + `mcp` | |
 
@@ -127,7 +127,17 @@ shortform-notes --ocr --ocr-provider openai https://www.instagram.com/p/DS3DPehE
 shortform-notes --ocr --ocr-fps 0 https://www.instagram.com/p/DS3DPehEnpA/   # read every frame instead of one per second
 ```
 
-How it works: frames are sampled at one per second (`--ocr-fps 1`, the default). `--ocr-fps 0` reads every frame, for fast-cut videos where text flashes for less than a second; `--ocr-fps 4` is a middle ground. Consecutive frames that look the same are dropped before any OCR call, so a video with a static overlay costs far less than the estimate. What is read goes into the note as a timestamped "On-screen text" section and into the summary prompt.
+How it works: frames are sampled at the video's cuts when `ffmpeg` is on your PATH, and once per second otherwise (see [Which frames get sampled](#which-frames-get-sampled)). Consecutive frames that look the same are dropped before any OCR call, so a video with a static overlay costs far less than the estimate. What is read goes into the note as a timestamped "On-screen text" section and into the summary prompt.
+
+#### Which frames get sampled
+
+A reel cuts every second or two, and sampling on the clock lands wherever the clock happens to land: three frames of one shot, none of the next. A video's keyframes sit on its cuts, so following them follows the edit.
+
+* **With `ffmpeg` on your PATH** (the default when it is installed), only keyframes are decoded — one frame per shot, and faster than decoding the whole video.
+* **Without it**, or when the keyframes are too sparse to describe the video, sampling falls back to `--ocr-fps` (1 per second by default). Nothing to install and nothing to configure; `ffmpeg` is never required.
+* **`--ocr-fps` forces the clock.** Passing it (or setting `SHORTFORM_NOTES_OCR_FPS`) means you asked for a rate, so a rate is what you get: `--ocr-fps 0` reads every frame, for text that flashes for less than a second; `--ocr-fps 4` is a middle ground.
+
+Either way the frames then go through the same de-duplication, and both `--ocr` and `--vision` share one pass over the video.
 
 Cost estimate, before de-duplication, using the vendors' published prices as of 2026-08-24:
 
@@ -149,7 +159,7 @@ shortform-notes --vision --ocr <url>        # frames are sampled once and used f
 shortform-notes --vision --ocr-fps 2 <url>  # --ocr-fps is the sampling rate for both
 ```
 
-It reuses the OCR path's machinery: the whole mp4 is downloaded, frames are sampled at `--ocr-fps` (1 per second by default), and near-identical frames are dropped before anything is sent. What is left goes into the summary call alongside the caption and transcript, and the note records `video` in its `sources`.
+It reuses the OCR path's machinery: the whole mp4 is downloaded, frames are sampled at the video's cuts (or at `--ocr-fps` — see [Which frames get sampled](#which-frames-get-sampled)), and near-identical frames are dropped before anything is sent. What is left goes into the summary call alongside the caption and transcript, and the note records `video` in its `sources`.
 
 **Frames are tiled, not sent one by one.** Up to 16 of them are composed into a contact sheet — a 4x4 grid in chronological order, each cell stamped with its timestamp in the corner — and the sheets are what the model receives. One sheet costs one image instead of sixteen, and the model sees the order of events laid out spatially, so it can say *when* something happened. At most 48 frames per video, evenly spaced when de-duplication leaves more, which is three sheets however long the video runs.
 
@@ -180,7 +190,7 @@ The setup page writes `~/.config/shortform-notes/config.env`; the CLI, MCP serve
 | `SHORTFORM_NOTES_WHISPER_MODEL` | | `base` | faster-whisper model size |
 | `SHORTFORM_NOTES_OCR` | `--ocr` / `--no-ocr` | `0` | Read on-screen text from video frames |
 | `SHORTFORM_NOTES_OCR_PROVIDER` | `--ocr-provider` | `auto` | `local` (free), `openai`, `anthropic`; auto picks openai when a key is set, else local |
-| `SHORTFORM_NOTES_OCR_FPS` | `--ocr-fps` | `1` | Frames sampled per second, for OCR and vision alike; `0` reads every frame |
+| `SHORTFORM_NOTES_OCR_FPS` | `--ocr-fps` | `1` | Frames sampled per second, for OCR and vision alike; `0` reads every frame. Setting it turns off cut-aware sampling |
 | `SHORTFORM_NOTES_VISION` | `--vision` / `--no-vision` | `0` | Send the sampled frames to the summary model as contact sheets (every backend but `none`) |
 | `SHORTFORM_NOTES_OCR_OPENAI_MODEL` | | `gpt-4o-mini` | OpenAI vision model for OCR |
 | `SHORTFORM_NOTES_OCR_ANTHROPIC_MODEL` | | `claude-opus-5` | Anthropic vision model for OCR |
@@ -263,7 +273,8 @@ URL -> detect platform
                         |
                         v
               transcribe: OpenAI API  |  local faster-whisper  |  skip
-              OCR (optional): sample frames -> local RapidOCR | OpenAI vision | Claude vision
+              sample frames (optional): at the cuts via ffmpeg, else at --ocr-fps via OpenCV
+              OCR (optional): those frames -> local RapidOCR | OpenAI vision | Claude vision
               vision (optional): those same frames ride into the summary call
                         |
                         v

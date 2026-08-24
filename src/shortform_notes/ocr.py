@@ -1,8 +1,9 @@
 """Optional on-screen text (OCR) from sampled video frames.
 
 Off by default. When on, the video is downloaded (not just the audio), frames
-are sampled at ``fps`` per second (1 by default; 0 means every frame), near
-duplicate frames are dropped, and the rest are read by one of:
+are sampled — at the video's cuts when ffmpeg is installed, otherwise at
+``fps`` per second — near duplicate frames are dropped, and the rest are read
+by one of:
 
 * ``local``      RapidOCR (PaddleOCR models on onnxruntime). Free, offline.
 * ``openai``     gpt-4o-mini vision, ``detail=low`` (2,833 tokens per frame).
@@ -20,7 +21,11 @@ import io
 import json
 import logging
 import math
+import re
+import shutil
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 
 from shortform_notes.config import Settings
 
@@ -107,9 +112,39 @@ def estimate(duration_seconds: float, settings: Settings) -> OcrEstimate:
 # ── frame extraction (OpenCV; no ffmpeg binary needed) ─────────────────
 
 
+class _Deduper:
+    """Drops a frame that looks like the one kept before it, on a 64x64 grayscale comparison."""
+
+    def __init__(self) -> None:
+        self._last = None
+
+    def is_new(self, bgr) -> bool:
+        import cv2
+        import numpy as np
+
+        gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+        small = cv2.resize(gray, (64, 64), interpolation=cv2.INTER_AREA).astype("float32")
+        changed = 1.0 if self._last is None else float((np.abs(small - self._last) >= DEDUPE_PIXEL_DELTA).mean())
+        if changed < DEDUPE_CHANGED_FRACTION:
+            return False
+        self._last = small
+        return True
+
+
+def _encode(bgr) -> bytes | None:
+    """Downscale to FRAME_MAX_SIDE and PNG-encode; None when encoding fails."""
+    import cv2
+
+    h, w = bgr.shape[:2]
+    scale = min(1.0, FRAME_MAX_SIDE / max(h, w))
+    if scale < 1.0:
+        bgr = cv2.resize(bgr, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+    ok, buf = cv2.imencode(".png", bgr)
+    return buf.tobytes() if ok else None
+
+
 def _extract_sync(video_path: str, fps: float) -> list[Frame]:
     import cv2  # lazy: optional dependency (opencv-python-headless)
-    import numpy as np
 
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -117,25 +152,16 @@ def _extract_sync(video_path: str, fps: float) -> list[Frame]:
     native = cap.get(cv2.CAP_PROP_FPS) or 30.0
     step = 1 if fps <= 0 else max(1, round(native / fps))
     frames: list[Frame] = []
-    last_small: np.ndarray | None = None
+    deduper = _Deduper()
     index = 0
     while True:
         ok, bgr = cap.read()
         if not ok:
             break
-        if index % step == 0:
-            gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-            small = cv2.resize(gray, (64, 64), interpolation=cv2.INTER_AREA).astype("float32")
-            changed = 1.0 if last_small is None else float((np.abs(small - last_small) >= DEDUPE_PIXEL_DELTA).mean())
-            if changed >= DEDUPE_CHANGED_FRACTION:
-                last_small = small
-                h, w = bgr.shape[:2]
-                scale = min(1.0, FRAME_MAX_SIDE / max(h, w))
-                if scale < 1.0:
-                    bgr = cv2.resize(bgr, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
-                ok_png, buf = cv2.imencode(".png", bgr)
-                if ok_png:
-                    frames.append(Frame(seconds=index / native, png=buf.tobytes()))
+        if index % step == 0 and deduper.is_new(bgr):
+            png = _encode(bgr)
+            if png:
+                frames.append(Frame(seconds=index / native, png=png))
         index += 1
     cap.release()
     return frames
@@ -143,6 +169,111 @@ def _extract_sync(video_path: str, fps: float) -> list[Frame]:
 
 async def extract_frames(video_path: str, fps: float) -> list[Frame]:
     return await asyncio.to_thread(_extract_sync, video_path, fps)
+
+
+# ── cut-aware sampling (ffmpeg keyframes, optional) ────────────────────
+#
+# Fixed-rate sampling lands wherever the clock says, which on a fast-cut reel means several
+# frames of one shot and none of the next. A video's keyframes sit at its cuts, so decoding
+# only those follows the edit instead of the clock. ffmpeg is optional: without it, or when
+# a rate was asked for explicitly, the OpenCV sampler above still runs.
+
+FFMPEG_TIMEOUT_SECONDS = 120
+MIN_KEYFRAMES = 4  # below this the keyframes are too sparse to describe the video; use the clock instead
+MAX_KEYFRAMES = 600  # an all-intra video makes every frame a keyframe; decode an even spread of them
+
+
+def has_ffmpeg() -> bool:
+    return shutil.which("ffmpeg") is not None
+
+
+def ffmpeg_argv(video_path: str, out_pattern: str) -> list[str]:
+    """Decode only keyframes, write them as PNGs, and report each one's timestamp on stderr."""
+    return [
+        "ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-skip_frame",
+        "nokey",  # decode keyframes only: fast, and they fall on the cuts
+        "-i",
+        video_path,
+        "-an",
+        "-fps_mode",
+        "passthrough",  # one output image per decoded frame, no rate conversion
+        "-vf",
+        "showinfo",  # prints pts_time for each frame, in output order
+        "-f",
+        "image2",
+        out_pattern,
+    ]
+
+
+def parse_showinfo(stderr: str) -> list[float]:
+    """Timestamps from ffmpeg's showinfo filter, in the order the frames were written."""
+    return [float(m) for m in re.findall(r"pts_time:\s*([0-9]+\.?[0-9]*)", stderr)]
+
+
+async def _run_ffmpeg(argv: list[str]) -> tuple[int, str]:
+    """Run ffmpeg and return (returncode, stderr). The subprocess boundary; patched in tests."""
+    proc = await asyncio.create_subprocess_exec(
+        *argv, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE
+    )
+    try:
+        _, err = await asyncio.wait_for(proc.communicate(), timeout=FFMPEG_TIMEOUT_SECONDS)
+    except TimeoutError:
+        proc.kill()
+        raise RuntimeError(f"ffmpeg timed out after {FFMPEG_TIMEOUT_SECONDS}s") from None
+    return proc.returncode or 0, err.decode(errors="replace")
+
+
+def _load_keyframes_sync(tmpdir: str, times: list[float]) -> list[Frame]:
+    """Decode the PNGs ffmpeg wrote, then run the same de-duplication the fps sampler uses."""
+    import cv2
+
+    paths = sorted(str(p) for p in Path(tmpdir).glob("kf-*.png"))
+    shots = [(path, times[i] if i < len(times) else float(i)) for i, path in enumerate(paths)]
+    if len(shots) > MAX_KEYFRAMES:
+        step = len(shots) / MAX_KEYFRAMES
+        shots = [shots[int(i * step)] for i in range(MAX_KEYFRAMES)]
+    frames: list[Frame] = []
+    deduper = _Deduper()
+    for path, seconds in shots:
+        bgr = cv2.imread(path, cv2.IMREAD_COLOR)
+        if bgr is None or not deduper.is_new(bgr):
+            continue
+        png = _encode(bgr)
+        if png:
+            frames.append(Frame(seconds=seconds, png=png))
+    return frames
+
+
+async def keyframes(video_path: str) -> list[Frame]:
+    """Frames at the video's cuts, de-duplicated. Empty when ffmpeg finds nothing."""
+    with tempfile.TemporaryDirectory(prefix="shortform-notes-kf-") as tmpdir:
+        code, stderr = await _run_ffmpeg(ffmpeg_argv(video_path, f"{tmpdir}/kf-%05d.png"))
+        # showinfo prints one pts_time per written frame, in the order they were written.
+        frames = await asyncio.to_thread(_load_keyframes_sync, tmpdir, parse_showinfo(stderr))
+        if code != 0 and not frames:
+            raise RuntimeError(f"ffmpeg exited {code}: {stderr.strip().splitlines()[-1][:200] if stderr else ''}")
+        return frames
+
+
+async def sample_frames(video_path: str, settings: Settings) -> list[Frame]:
+    """The frames to work from: cut-aware when ffmpeg allows it, otherwise fixed-rate.
+
+    An explicit ``--ocr-fps`` means the user asked for a rate, so the rate is what they get.
+    """
+    if not settings.fps_explicit and has_ffmpeg():
+        try:
+            frames = await keyframes(video_path)
+        except Exception as exc:  # noqa: BLE001 (ffmpeg is optional; the OpenCV sampler still works)
+            logger.warning("ffmpeg keyframe sampling failed, falling back to %sfps: %s", settings.ocr_fps, exc)
+        else:
+            if len(frames) >= MIN_KEYFRAMES:
+                logger.info("sampled %d frames at the video's cuts (ffmpeg keyframes)", len(frames))
+                return frames
+            logger.info("only %d keyframes; falling back to %s fps sampling", len(frames), settings.ocr_fps)
+    return await extract_frames(video_path, settings.ocr_fps)
 
 
 def timestamp(seconds: float) -> str:
@@ -334,7 +465,7 @@ async def read_screen_text(
     ``frames`` lets a caller that already sampled the video (the vision path)
     reuse them instead of decoding it a second time.
     """
-    frames = await extract_frames(video_path, settings.ocr_fps) if frames is None else frames
+    frames = await sample_frames(video_path, settings) if frames is None else frames
     if not frames:
         return None, 0
     backend = globals()[_BACKENDS[settings.ocr_provider]]

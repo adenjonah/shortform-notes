@@ -30,6 +30,7 @@ def settings(**overrides) -> config.Settings:
         ocr_openai_model="gpt-4o-mini",
         ocr_anthropic_model="claude-opus-5",
         vision=False,
+        fps_explicit=False,
     )
     return config.Settings(**{**base, **overrides})
 
