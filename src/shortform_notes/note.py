@@ -4,10 +4,29 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
 _SLUG_MAX = 48
+
+
+@dataclass(frozen=True)
+class Scene:
+    """One moment the summary model saw in the video frames, with the timestamp it was labelled with.
+
+    Produced only under ``--vision``: without frames the model has nothing to
+    describe, so a note written from caption and transcript alone has no scenes.
+    """
+
+    time: str  # mm:ss, as printed on the contact-sheet cell; "" when the model gave none
+    description: str
+
+    def to_dict(self) -> dict:
+        return {"time": self.time, "description": self.description}
+
+    def line(self) -> str:
+        return f"- [{self.time}] {self.description}" if self.time else f"- {self.description}"
 
 
 @dataclass(frozen=True)
@@ -52,8 +71,9 @@ def build_note(
     summary: str,
     takeaways: tuple[str, ...],
     imported_at: datetime,
+    scenes: Sequence[Scene] = (),
 ) -> str:
-    """Frontmatter, summary, takeaways, then the verbatim caption and transcript.
+    """Frontmatter, what the model made of the video, then the verbatim caption and transcript.
 
     ``sources`` records which inputs actually produced the note (caption, transcript)
     so a wrong summary is attributable to its input rather than a mystery.
@@ -79,6 +99,8 @@ def build_note(
     body += ["", "## Summary", "", summary or "_No summary generated._"]
     if takeaways:
         body += ["", "## Key takeaways", ""] + [f"- {t}" for t in takeaways]
+    if scenes:
+        body += ["", "## Video breakdown", ""] + [scene.line() for scene in scenes]
     body += ["", "## Caption", ""]
     body += [_blockquote(content.caption)] if content.caption else ["_No caption._"]
     body += ["", "## Transcript", ""]

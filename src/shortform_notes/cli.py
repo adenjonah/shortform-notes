@@ -86,6 +86,8 @@ def _print_result(result, as_json: bool) -> None:
         print(f"  {result.summary}")
     for t in result.takeaways:
         print(f"  - {t}")
+    if result.scenes:
+        print(f"  ({len(result.scenes)} scenes under 'Video breakdown' in the note)")
     for w in result.warnings:
         print(f"  warning: {w}")
 

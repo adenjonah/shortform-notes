@@ -8,6 +8,7 @@ import json
 import sys
 import types
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -16,8 +17,11 @@ import pytest
 
 from shortform_notes import config, media, ocr, summarize
 from shortform_notes.media import DownloadedMedia
-from shortform_notes.pipeline import import_reel
+from shortform_notes.note import ReelContent, Scene, build_note
+from shortform_notes.pipeline import ReelImportResult, import_reel
 from shortform_notes.summarize import MAX_VISION_FRAMES, select_frames, vision_estimate
+
+NOW = datetime(2026, 8, 23, 20, 30, tzinfo=timezone.utc)
 
 cv2 = pytest.importorskip("cv2")  # vision samples and tiles frames with OpenCV
 np = pytest.importorskip("numpy")
@@ -307,6 +311,105 @@ def test_vision_estimate_is_free_on_subscription_backends(tmp_path):
         est = vision_estimate(60, settings(tmp_path, summary_provider=provider))
         assert est.sheets == 3 and est.usd == 0.0
         assert "included in your subscription" in est.describe()
+
+
+# ── video breakdown ────────────────────────────────────────────────────
+
+
+def test_scenes_are_only_asked_for_when_the_model_can_see():
+    assert "scenes" not in summarize.summary_schema()["properties"]
+    with_frames = summarize.summary_schema(with_frames=True)
+    assert with_frames["required"] == ["title", "summary", "takeaways", "scenes"]
+    cell = with_frames["properties"]["scenes"]["items"]
+    assert cell["required"] == ["time", "description"]
+    assert "scenes" not in summarize.build_prompt("me")
+    assert "scenes" in summarize.build_prompt("me", with_frames=True)
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ({"time": "00:03", "description": "cracks an egg"}, ("00:03", "cracks an egg")),
+        ({"time": "[00:03]", "description": "cracks an egg"}, ("00:03", "cracks an egg")),
+        ({"time": 3, "description": "cracks an egg"}, ("00:03", "cracks an egg")),  # answered in seconds
+        ({"time": 75.4, "description": "cracks an egg"}, ("01:15", "cracks an egg")),
+        ({"description": "cracks an egg"}, ("", "cracks an egg")),  # no time: still usable
+        ("cracks an egg", ("", "cracks an egg")),  # a backend that ignored the schema
+    ],
+)
+def test_scene_times_are_normalized(raw, expected):
+    scenes = summarize._scenes([raw])
+    assert (scenes[0].time, scenes[0].description) == expected
+
+
+def test_unusable_scenes_are_dropped_not_raised():
+    assert summarize._scenes([{"time": "00:01", "description": ""}, None, 7, {}]) == ()
+    assert summarize._scenes("not a list") == ()
+    assert summarize._scenes(None) == ()
+
+
+async def test_scenes_survive_the_round_trip_from_a_backend(tmp_path):
+    reply = {**REPLY, "scenes": [{"time": "00:00", "description": "a hand cracks an egg"}]}
+    with patch.object(summarize, "_run_cli", AsyncMock(return_value=stream_json_output(json.dumps(reply)))):
+        result = await summarize.summarize(
+            "cap", None, settings(tmp_path, summary_provider="claude-code"), frames=frames(3)
+        )
+    assert [(s.time, s.description) for s in result.scenes] == [("00:00", "a hand cracks an egg")]
+
+
+def test_note_renders_a_video_breakdown_section(tmp_path):
+    content = ReelContent(
+        url="u", platform="tiktok", caption="cap", transcript=None, screen_text=None, title=None,
+        creator_handle="c", creator_name=None, posted=None, duration=8.0, thumbnail=None,
+        sources=("caption", "video"), warnings=(),
+    )
+    scenes = (Scene("00:00", "a hand cracks an egg"), Scene("", "the cake comes out"))
+    note = build_note(content, "T", "S", ("a",), NOW, scenes)
+    assert "## Video breakdown" in note
+    assert "- [00:00] a hand cracks an egg" in note
+    assert "- the cake comes out" in note  # no timestamp, no empty brackets
+    assert note.index("## Video breakdown") < note.index("## Caption")
+    assert "## Video breakdown" not in build_note(content, "T", "S", ("a",), NOW)
+
+
+def test_json_output_carries_scenes_only_when_there_are_some(tmp_path):
+    plain = ReelImportResult(tmp_path / "n.md", "T", "S", ("a",), ("caption",), ())
+    assert "scenes" not in plain.to_dict()  # a run without vision looks exactly as it did
+    seen = ReelImportResult(tmp_path / "n.md", "T", "S", ("a",), ("caption", "video"), (), (Scene("00:03", "d"),))
+    assert seen.to_dict()["scenes"] == [{"time": "00:03", "description": "d"}]
+
+
+async def test_the_breakdown_reaches_the_saved_note(tmp_path):
+    reply = {**REPLY, "scenes": [{"time": "00:02", "description": "zest goes in"}]}
+    with (
+        patch.object(media, "download_media", AsyncMock(return_value=video())),
+        patch.object(ocr, "sample_frames", AsyncMock(return_value=frames(3))),
+        patch("shortform_notes.summarize._summarize_openai", AsyncMock(return_value=reply)),
+    ):
+        result = await import_reel("https://www.tiktok.com/@c/video/1", settings(tmp_path))
+    assert "## Video breakdown\n\n- [00:02] zest goes in" in result.path.read_text()
+    assert result.to_dict()["scenes"] == [{"time": "00:02", "description": "zest goes in"}]
+
+
+def test_cli_points_at_the_breakdown_without_reprinting_it(tmp_path, capsys):
+    from shortform_notes.cli import _print_result
+
+    scenes = (Scene("00:03", "zest goes in"), Scene("00:05", "into the oven"))
+    _print_result(ReelImportResult(tmp_path / "n.md", "T", "S", ("a",), ("caption", "video"), (), scenes), False)
+    out = capsys.readouterr().out
+    assert "(2 scenes under 'Video breakdown' in the note)" in out
+    assert "zest goes in" not in out  # the note holds the detail, the terminal stays short
+
+
+async def test_a_run_without_vision_never_asks_for_scenes(tmp_path):
+    sent = {}
+    with stub_openai(sent):
+        await summarize.summarize("cap", None, settings(tmp_path, vision=False), frames=frames(4))
+    schema = sent["response_format"]["json_schema"]["schema"]
+    assert "scenes" not in schema["properties"]
+    with stub_openai(sent):
+        await summarize.summarize("cap", None, settings(tmp_path), frames=frames(4))
+    assert "scenes" in sent["response_format"]["json_schema"]["schema"]["properties"]
 
 
 # ── pipeline wiring ────────────────────────────────────────────────────

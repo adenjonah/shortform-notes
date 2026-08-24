@@ -15,7 +15,9 @@ With ``--vision`` every backend also sees the video. Frames sampled by ``ocr``
 are tiled into timestamped contact sheets and sent as images: the APIs take
 image blocks, ``claude -p`` takes them as an API-style user message on its
 ``--input-format stream-json`` stdin, and ``codex exec`` takes them as ``-i``
-files. Only ``none``, which makes no call at all, cannot see them.
+files. Only ``none``, which makes no call at all, cannot see them. The same
+call then also returns ``scenes``, a timestamped breakdown of what is on
+screen, which becomes the note's "Video breakdown" section.
 """
 
 from __future__ import annotations
@@ -34,6 +36,7 @@ from pathlib import Path
 
 from shortform_notes import ocr
 from shortform_notes.config import Settings
+from shortform_notes.note import Scene
 
 logger = logging.getLogger(__name__)
 
@@ -42,20 +45,40 @@ CLI_TIMEOUT_SECONDS = 180
 # Tiled 16 to a contact sheet, so this is at most 3 images however long the video is.
 MAX_VISION_FRAMES = 48
 
-SUMMARY_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "title": {"type": "string", "description": "Short descriptive title, max 8 words, no hashtags, no emoji"},
-        "summary": {"type": "string", "description": "2-4 sentences: what the video is about and its main point"},
-        "takeaways": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "3-6 concrete, specific takeaways: exact quantities, steps, names, numbers when present",
-        },
+_TEXT_PROPERTIES = {
+    "title": {"type": "string", "description": "Short descriptive title, max 8 words, no hashtags, no emoji"},
+    "summary": {"type": "string", "description": "2-4 sentences: what the video is about and its main point"},
+    "takeaways": {
+        "type": "array",
+        "items": {"type": "string"},
+        "description": "3-6 concrete, specific takeaways: exact quantities, steps, names, numbers when present",
     },
-    "required": ["title", "summary", "takeaways"],
-    "additionalProperties": False,
 }
+# Only asked for when the model can see the frames; without them it would have to invent the scenes.
+_SCENES_PROPERTY = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "time": {"type": "string", "description": "Timestamp as printed on the frame, mm:ss"},
+            "description": {"type": "string", "description": "One sentence: what is on screen at that moment"},
+        },
+        "required": ["time", "description"],
+        "additionalProperties": False,
+    },
+    "description": "Scene-by-scene breakdown, one entry per distinct moment, in chronological order",
+}
+
+
+def summary_schema(with_frames: bool = False) -> dict:
+    """The JSON contract every backend answers with. ``scenes`` is added only under vision."""
+    properties = {**_TEXT_PROPERTIES, "scenes": _SCENES_PROPERTY} if with_frames else dict(_TEXT_PROPERTIES)
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": list(properties),  # strict schemas require every declared property
+        "additionalProperties": False,
+    }
 
 
 class SummaryError(Exception):
@@ -67,6 +90,7 @@ class Summary:
     title: str
     summary: str
     takeaways: tuple[str, ...]
+    scenes: tuple[Scene, ...] = ()  # empty unless the model saw the frames
 
 
 def build_prompt(audience: str, with_frames: bool = False) -> str:
@@ -86,7 +110,10 @@ def build_prompt(audience: str, with_frames: bool = False) -> str:
             f"laid out {ocr.GRID_COLS} per row in chronological order, left to right then top to bottom, with "
             "its timestamp printed in the top-left corner of the cell. Read them as a filmstrip: use them for "
             "what happens on screen, the actions, results and quantities that are shown rather than said. The "
-            "frames are a source like the others, so report what they show and invent nothing."
+            "frames are a source like the others, so report what they show and invent nothing.\n"
+            "Also return scenes: a chronological breakdown of the video, one entry per distinct moment, each "
+            "with the timestamp printed on the frame it came from and one sentence saying what is on screen "
+            "then. Merge cells that show the same moment, and describe only what is visible."
         )
     return prompt
 
@@ -153,7 +180,7 @@ def _cli_prompt(
     return (
         f"{build_prompt(settings.audience, with_frames)}\n\n"
         f"Reply with ONLY a JSON object matching this schema, no prose, no code fences:\n"
-        f"{json.dumps(SUMMARY_SCHEMA)}\n\n{_user_message(caption, transcript, screen_text)}"
+        f"{json.dumps(summary_schema(with_frames))}\n\n{_user_message(caption, transcript, screen_text)}"
     )
 
 
@@ -170,12 +197,39 @@ def extract_json(text: str) -> dict:
     return json.loads(cleaned[start : end + 1])
 
 
+def _scene_time(raw: object) -> str:
+    """mm:ss. Models echo the label printed on the cell ("00:03"), but some answer in seconds."""
+    text = str(raw if raw is not None else "").strip().strip("[]")
+    try:
+        return ocr.timestamp(float(text))
+    except ValueError:
+        return text
+
+
+def _scenes(raw: object) -> tuple[Scene, ...]:
+    """Whatever the model called a scene, as Scenes. Anything unusable is dropped, not raised."""
+    if not isinstance(raw, list):
+        return ()
+    scenes = []
+    for item in raw:
+        if isinstance(item, dict):
+            time, description = item.get("time"), str(item.get("description") or "").strip()
+        elif isinstance(item, str):  # a backend that ignored the schema answers with plain lines
+            time, description = None, item.strip()
+        else:
+            continue
+        if description:
+            scenes.append(Scene(time=_scene_time(time), description=description))
+    return tuple(scenes)
+
+
 def _coerce(data: dict, fallback_title: str) -> Summary:
     takeaways = tuple(str(t).strip() for t in data.get("takeaways") or [] if str(t).strip())
     return Summary(
         title=(data.get("title") or fallback_title).strip(),
         summary=(data.get("summary") or "").strip(),
         takeaways=takeaways,
+        scenes=_scenes(data.get("scenes")),
     )
 
 
@@ -207,7 +261,7 @@ async def _summarize_openai(
         ],
         response_format={
             "type": "json_schema",
-            "json_schema": {"name": "reel_summary", "strict": True, "schema": SUMMARY_SCHEMA},
+            "json_schema": {"name": "reel_summary", "strict": True, "schema": summary_schema(bool(grids))},
         },
         temperature=0.2,
         max_tokens=800,
@@ -235,7 +289,7 @@ async def _summarize_anthropic(
         max_tokens=2000,
         system=build_prompt(settings.audience, with_frames=bool(grids)),
         messages=[{"role": "user", "content": content}],
-        output_config={"format": {"type": "json_schema", "schema": SUMMARY_SCHEMA}},
+        output_config={"format": {"type": "json_schema", "schema": summary_schema(bool(grids))}},
     )
     if response.stop_reason == "refusal":
         raise SummaryError("model declined to summarize this video")

@@ -163,6 +163,18 @@ It reuses the OCR path's machinery: the whole mp4 is downloaded, frames are samp
 
 **Frames are tiled, not sent one by one.** Up to 16 of them are composed into a contact sheet — a 4x4 grid in chronological order, each cell stamped with its timestamp in the corner — and the sheets are what the model receives. One sheet costs one image instead of sixteen, and the model sees the order of events laid out spatially, so it can say *when* something happened. At most 48 frames per video, evenly spaced when de-duplication leaves more, which is three sheets however long the video runs.
 
+**What it sees is written down.** The same call also returns a scene-by-scene breakdown, which lands in the note as a `## Video breakdown` section of timestamped lines and in `--json` under `scenes`:
+
+```markdown
+## Video breakdown
+
+- [00:00] A hand grates an onion over a bowl.
+- [00:03] The pita halves are stuffed and pressed shut.
+- [00:11] The arayes go into a hot pan, meat side down.
+```
+
+Without it the model's visual observations are boiled down into a few takeaways and lost, so you cannot ask "what happened at 00:11" afterwards. The section is absent, and the `scenes` key is not written at all, when vision is off.
+
 **Every summary backend can see them**, by the route its own interface allows:
 
 | Backend | How the sheets get there | Cost |
@@ -258,7 +270,7 @@ Dinners you'll actually make, episode 19. Arayes that are surprisingly so easy .
 [00:23] Ingredients 4 small pitas cut in half grated & squeezed dry ...
 ```
 
-Everything after the takeaways is verbatim; the last section only appears when OCR is on. On this reel the OCR lines are read by the free local model, which is why a few are rough.
+Everything after the takeaways is verbatim, apart from `## Video breakdown`, which sits between the takeaways and the caption when `--vision` is on. The `## On-screen text` section only appears when OCR is on. On this reel the OCR lines are read by the free local model, which is why a few are rough.
 
 The last section only appears when OCR is on.
 

@@ -22,7 +22,7 @@ from pathlib import Path
 
 from shortform_notes import instagram, media, ocr, urls
 from shortform_notes.config import Settings, load_settings
-from shortform_notes.note import ReelContent, build_note, note_filename
+from shortform_notes.note import ReelContent, Scene, build_note, note_filename
 from shortform_notes.summarize import summarize, vision_estimate
 from shortform_notes.transcribe import transcribe
 
@@ -41,9 +41,10 @@ class ReelImportResult:
     takeaways: tuple[str, ...]
     sources: tuple[str, ...]
     warnings: tuple[str, ...]
+    scenes: tuple[Scene, ...] = ()  # only under --vision; see summarize.summary_schema
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             "path": str(self.path),
             "title": self.title,
             "summary": self.summary,
@@ -51,6 +52,9 @@ class ReelImportResult:
             "sources": list(self.sources),
             "warnings": list(self.warnings),
         }
+        if self.scenes:  # absent, not empty, so a run without vision looks exactly as it did
+            data["scenes"] = [scene.to_dict() for scene in self.scenes]
+        return data
 
 
 async def gather_content(url: str, tmpdir: str, settings: Settings) -> tuple[ReelContent, list[ocr.Frame]]:
@@ -189,6 +193,9 @@ async def import_reel(url: str, settings: Settings | None = None, now: datetime 
     path = _unique_path(
         settings.output_dir, note_filename(content.posted or now, content.creator_handle, result.title), now
     )
-    path.write_text(build_note(content, result.title, result.summary, result.takeaways, now), encoding="utf-8")
-    logger.info("reel imported: %s sources=%s", path, content.sources)
-    return ReelImportResult(path, result.title, result.summary, result.takeaways, content.sources, content.warnings)
+    note = build_note(content, result.title, result.summary, result.takeaways, now, result.scenes)
+    path.write_text(note, encoding="utf-8")
+    logger.info("reel imported: %s sources=%s scenes=%d", path, content.sources, len(result.scenes))
+    return ReelImportResult(
+        path, result.title, result.summary, result.takeaways, content.sources, content.warnings, result.scenes
+    )
