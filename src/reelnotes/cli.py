@@ -26,7 +26,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "urls",
         nargs="*",
-        help="one or more reel / short-video links; or 'web' for the local setup UI, 'mcp' for the MCP server",
+        help=(
+            "one or more reel / short-video links; or 'web' (browser setup), "
+            "'setup' (terminal setup), 'mcp' (MCP server)"
+        ),
     )
     parser.add_argument("-o", "--out", help="output directory (default: ./reels or $REELNOTES_DIR)")
     parser.add_argument(
@@ -85,6 +88,10 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(
         level=logging.INFO if args.verbose else logging.WARNING, format="%(levelname)s %(name)s: %(message)s"
     )
+    if args.urls == ["setup"]:  # terminal wizard; writes the same config file as the web page
+        from reelnotes.setup_cli import main as setup_main
+
+        return setup_main()
     if args.urls and args.urls[0] == "web":  # `reelnotes web [port]`: local setup and import UI
         from reelnotes.web.server import serve
 

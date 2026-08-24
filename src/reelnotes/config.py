@@ -103,7 +103,7 @@ def write_config_file(values: dict[str, str], path: Path | None = None) -> Path:
     """Write KEY=VALUE pairs (empty values dropped), owner-readable only since it may hold API keys."""
     path = path or CONFIG_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    lines = ["# reelnotes configuration, written by `reelnotes web`. Edit freely.", ""]
+    lines = ["# reelnotes configuration, written by reelnotes setup. Edit freely.", ""]
     lines += [f"{k}={v}" for k, v in sorted(values.items()) if v]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     path.chmod(0o600)

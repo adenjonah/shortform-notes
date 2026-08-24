@@ -22,9 +22,17 @@ The intended use is saving a recipe or tip you would otherwise lose in a bookmar
 git clone https://github.com/adenjonah/reel-notes && cd reel-notes && ./start.sh
 ```
 
-`start.sh` installs [uv](https://docs.astral.sh/uv/) if it is missing, uv installs Python and the dependencies, and a setup page opens in your browser on 127.0.0.1. The page asks three questions: which backend writes the summary (Claude Code, Codex, or an API key), how to transcribe, and where to save notes. It then accepts a link and runs one import. The page does not scan your machine; it only reads its own config file.
+`start.sh` installs [uv](https://docs.astral.sh/uv/) if it is missing, uv installs Python and every dependency, and then the script asks one question:
 
-Windows: run `start.ps1`. macOS without a terminal: double-click `Start.command`. Later runs skip setup and open the import page directly. `./start.sh <url>` imports from the terminal without opening the browser.
+```
+How do you want to set up reelnotes?
+  1) In the browser (recommended if you are not used to the terminal)
+  2) In this terminal
+```
+
+Both paths ask the same things (how to run the AI, how to transcribe, where to save notes) and write the same config file, `~/.config/reelnotes/config.env`. The browser path opens a local page at 127.0.0.1 and ends with a box where you paste a link and see the note. The terminal path is `reelnotes setup`, a short numbered wizard. Nothing on your machine is scanned; both only ask.
+
+Windows: run `start.ps1`. macOS users who prefer not to open a terminal can double-click `Start.command`. Once a config exists, `./start.sh` opens the import page directly, `./start.sh setup` re-runs the wizard, and `./start.sh <url>` imports from the terminal.
 
 ### Install as a CLI instead
 
