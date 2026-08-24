@@ -6,8 +6,8 @@ from http.client import HTTPConnection
 
 import pytest
 
-from reelnotes import config
-from reelnotes.web import server as web
+from shortform_notes import config
+from shortform_notes.web import server as web
 
 
 @pytest.fixture
@@ -43,12 +43,16 @@ def test_save_config_writes_file_and_creates_dir(client, tmp_path, monkeypatch):
         client,
         "POST",
         "/api/config",
-        {"REELNOTES_SUMMARY_PROVIDER": "claude-code", "REELNOTES_DIR": str(out), "OPENAI_API_KEY": "sk-secret"},
+        {
+            "SHORTFORM_NOTES_SUMMARY_PROVIDER": "claude-code",
+            "SHORTFORM_NOTES_DIR": str(out),
+            "OPENAI_API_KEY": "sk-secret",
+        },
     )
     assert status == 200
     assert out.is_dir()
     saved = config.read_config_file(config.CONFIG_PATH)
-    assert saved["REELNOTES_SUMMARY_PROVIDER"] == "claude-code" and saved["OPENAI_API_KEY"] == "sk-secret"
+    assert saved["SHORTFORM_NOTES_SUMMARY_PROVIDER"] == "claude-code" and saved["OPENAI_API_KEY"] == "sk-secret"
     assert data["detect"]["has_openai_key"] is True and "OPENAI_API_KEY" not in json.dumps(data["detect"])
     assert "claude" in data["warning"]  # CLI chosen but not on PATH: warning, not a hard error
 

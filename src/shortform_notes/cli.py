@@ -1,4 +1,4 @@
-"""``reelnotes <url> [<url> ...]``: the command-line entry point."""
+"""``shortform-notes <url> [<url> ...]``: the command-line entry point."""
 
 from __future__ import annotations
 
@@ -8,19 +8,19 @@ import json
 import logging
 import sys
 
-from reelnotes import __version__
-from reelnotes.config import SUMMARY_PROVIDERS, TRANSCRIBE_PROVIDERS, load_settings
-from reelnotes.pipeline import ReelImportError, import_reel
+from shortform_notes import __version__
+from shortform_notes.config import SUMMARY_PROVIDERS, TRANSCRIBE_PROVIDERS, load_settings
+from shortform_notes.pipeline import ReelImportError, import_reel
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="reelnotes",
+        prog="shortform-notes",
         description="Turn Instagram Reels, TikToks and YouTube Shorts into Markdown notes.",
         epilog=(
             "Without an API key, summaries run through `claude` (Claude Code) or `codex` if either is on your PATH. "
-            "Env: OPENAI_API_KEY, ANTHROPIC_API_KEY, REELNOTES_DIR, REELNOTES_SUMMARY_PROVIDER, "
-            "REELNOTES_TRANSCRIBE_PROVIDER, REELNOTES_AUDIENCE. See .env.example."
+            "Env: OPENAI_API_KEY, ANTHROPIC_API_KEY, SHORTFORM_NOTES_DIR, SHORTFORM_NOTES_SUMMARY_PROVIDER, "
+            "SHORTFORM_NOTES_TRANSCRIBE_PROVIDER, SHORTFORM_NOTES_AUDIENCE. See .env.example."
         ),
     )
     parser.add_argument(
@@ -31,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
             "'setup' (terminal setup), 'mcp' (MCP server)"
         ),
     )
-    parser.add_argument("-o", "--out", help="output directory (default: ./reels or $REELNOTES_DIR)")
+    parser.add_argument("-o", "--out", help="output directory (default: ./reels or $SHORTFORM_NOTES_DIR)")
     parser.add_argument(
         "--summary",
         choices=[*SUMMARY_PROVIDERS, "auto"],
@@ -45,7 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-transcript", action="store_true", help="alias for --transcribe none")
     parser.add_argument("--json", action="store_true", help="print machine-readable JSON instead of text")
     parser.add_argument("-v", "--verbose", action="store_true", help="show fetch/debug logs")
-    parser.add_argument("--version", action="version", version=f"reelnotes {__version__}")
+    parser.add_argument("--version", action="version", version=f"shortform-notes {__version__}")
     return parser
 
 
@@ -89,16 +89,16 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.INFO if args.verbose else logging.WARNING, format="%(levelname)s %(name)s: %(message)s"
     )
     if args.urls == ["setup"]:  # terminal wizard; writes the same config file as the web page
-        from reelnotes.setup_cli import main as setup_main
+        from shortform_notes.setup_cli import main as setup_main
 
         return setup_main()
-    if args.urls and args.urls[0] == "web":  # `reelnotes web [port]`: local setup and import UI
-        from reelnotes.web.server import serve
+    if args.urls and args.urls[0] == "web":  # `shortform-notes web [port]`: local setup and import UI
+        from shortform_notes.web.server import serve
 
         serve(port=int(args.urls[1]) if len(args.urls) > 1 else None, open_browser=not args.json)
         return 0
-    if args.urls == ["mcp"]:  # `reelnotes mcp`: stdio MCP server for Claude Code / Claude Desktop
-        from reelnotes.mcp_server import run_server
+    if args.urls == ["mcp"]:  # `shortform-notes mcp`: stdio MCP server for Claude Code / Claude Desktop
+        from shortform_notes.mcp_server import run_server
 
         run_server()
         return 0

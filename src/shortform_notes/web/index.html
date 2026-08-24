@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>reelnotes setup</title>
+<title>shortform-notes setup</title>
 <style>
   :root {
     --bg: #fafaf9;
@@ -81,13 +81,13 @@
 </head>
 <body>
 <div class="wrap">
-  <header><h1>reelnotes</h1><span class="ver" id="ver"></span></header>
+  <header><h1>shortform-notes</h1><span class="ver" id="ver"></span></header>
   <ul class="steps" id="steps"><li>Step 1 of 4</li><li>Step 2 of 4</li><li>Step 3 of 4</li><li>Step 4 of 4</li></ul>
 
   <!-- Step 0: method -->
   <section class="card" data-step="0">
     <h2>Where should the summary run?</h2>
-    <p class="lead">reelnotes turns an Instagram Reel, TikTok, or YouTube Short into a Markdown note with the caption, transcript, and takeaways. One model call per reel writes the summary. Choose where that call runs.</p>
+    <p class="lead">shortform-notes turns an Instagram Reel, TikTok, or YouTube Short into a Markdown note with the caption, transcript, and takeaways. One model call per reel writes the summary. Choose where that call runs.</p>
     <div class="opts" id="summaryOpts"></div>
 
     <div class="field hidden" id="openaiField">
@@ -123,8 +123,8 @@
   <section class="card hidden" data-step="2">
     <h2>Where should notes be saved?</h2>
     <p class="lead">One <code>.md</code> file per reel, named <code>&lt;date&gt;-&lt;creator&gt;-&lt;title&gt;.md</code>. Any folder works. For Obsidian, use a folder inside the vault.</p>
-    <div class="field"><label>Folder</label><input type="text" id="REELNOTES_DIR"><div class="hint">Created if it does not exist.</div></div>
-    <div class="field"><label>Who the notes are for</label><input type="text" id="REELNOTES_AUDIENCE" placeholder="the reader"><div class="hint">Optional. Shapes the summary, for example "a home cook who saves recipes".</div></div>
+    <div class="field"><label>Folder</label><input type="text" id="SHORTFORM_NOTES_DIR"><div class="hint">Created if it does not exist.</div></div>
+    <div class="field"><label>Who the notes are for</label><input type="text" id="SHORTFORM_NOTES_AUDIENCE" placeholder="the reader"><div class="hint">Optional. Shapes the summary, for example "a home cook who saves recipes".</div></div>
     <div class="msg bad hidden" id="saveErr"></div>
     <div class="nav"><button class="ghost" onclick="go(1)">Back</button><button class="primary" id="saveBtn" onclick="saveAndGo()">Save and finish</button></div>
   </section>
@@ -149,7 +149,7 @@
 
     <h3>Using it later</h3>
     <div class="how">
-      <div><strong>This page</strong><p>Run <code>./start.sh</code> in the reelnotes folder and paste a link above. Settings are stored in <code id="cfgPath"></code>. Edit that file or return here to change them.</p></div>
+      <div><strong>This page</strong><p>Run <code>./start.sh</code> in the shortform-notes folder and paste a link above. Settings are stored in <code id="cfgPath"></code>. Edit that file or return here to change them.</p></div>
       <div><strong>Terminal</strong><p>Import from the terminal:</p><div class="pre-wrap"><pre id="cmdCli"></pre><button class="small" onclick="copyText('cmdCli', this)">Copy</button></div></div>
     </div>
     <div class="nav"><button class="ghost" onclick="go(2)">Change settings</button><button onclick="openFolder()">Open notes folder</button></div>
@@ -165,10 +165,11 @@ const NAMES = { 'claude-code': 'Claude Code', codex: 'Codex', openai: 'OpenAI AP
 async function boot() {
   st = await (await fetch('/api/state')).json();
   $('ver').textContent = 'v' + st.version;
-  state.summary = st.current.REELNOTES_SUMMARY_PROVIDER || 'claude-code';
-  state.transcribe = st.current.REELNOTES_TRANSCRIBE_PROVIDER || '';
+  state.summary = st.current.SHORTFORM_NOTES_SUMMARY_PROVIDER || 'claude-code';
+  state.transcribe = st.current.SHORTFORM_NOTES_TRANSCRIBE_PROVIDER || '';
   renderSummaryOpts(); renderDir();
-  go(st.config_exists ? 3 : 0);   // returning user: open the import page directly
+  const hash = /^#step=(\d)$/.exec(location.hash);  // deep link, used for docs screenshots
+  go(hash ? +hash[1] : st.config_exists ? 3 : 0);   // returning user: open the import page directly
 }
 
 // step 0: method
@@ -239,16 +240,16 @@ function next1() {
 
 // step 2: folder + save
 function renderDir() {
-  $('REELNOTES_DIR').value = st.current.REELNOTES_DIR || (st.home + '/reelnotes');
-  $('REELNOTES_AUDIENCE').value = st.current.REELNOTES_AUDIENCE || '';
+  $('SHORTFORM_NOTES_DIR').value = st.current.SHORTFORM_NOTES_DIR || (st.home + '/shortform-notes');
+  $('SHORTFORM_NOTES_AUDIENCE').value = st.current.SHORTFORM_NOTES_AUDIENCE || '';
 }
 async function saveAndGo() {
   const btn = $('saveBtn'); btn.disabled = true; $('saveErr').classList.add('hidden');
   const body = {
-    REELNOTES_SUMMARY_PROVIDER: state.summary,
-    REELNOTES_TRANSCRIBE_PROVIDER: state.transcribe,
-    REELNOTES_DIR: $('REELNOTES_DIR').value.trim(),
-    REELNOTES_AUDIENCE: $('REELNOTES_AUDIENCE').value.trim(),
+    SHORTFORM_NOTES_SUMMARY_PROVIDER: state.summary,
+    SHORTFORM_NOTES_TRANSCRIBE_PROVIDER: state.transcribe,
+    SHORTFORM_NOTES_DIR: $('SHORTFORM_NOTES_DIR').value.trim(),
+    SHORTFORM_NOTES_AUDIENCE: $('SHORTFORM_NOTES_AUDIENCE').value.trim(),
     OPENAI_API_KEY: $('OPENAI_API_KEY').value.trim() || $('OPENAI_API_KEY_2').value.trim(),
     ANTHROPIC_API_KEY: $('ANTHROPIC_API_KEY').value.trim(),
   };
@@ -265,22 +266,22 @@ async function saveAndGo() {
 function skillifyPrompt(kind) {
   const repo = st.repo_dir;
   const mcp = kind === 'claude-code'
-    ? `claude mcp add reelnotes -- uv run --directory "${repo}" reelnotes mcp`
-    : `codex mcp add reelnotes -- uv run --directory "${repo}" reelnotes mcp`;
-  return `Set up the reelnotes tool. It is installed at ${repo} and configured in ${st.config_path}.
+    ? `claude mcp add shortform-notes -- uv run --directory "${repo}" shortform-notes mcp`
+    : `codex mcp add shortform-notes -- uv run --directory "${repo}" shortform-notes mcp`;
+  return `Set up the shortform-notes tool. It is installed at ${repo} and configured in ${st.config_path}.
 
-1. Register it as an MCP server so you get an import_reel_note(url) tool:
+1. Register it as an MCP server so you get an import_shortform_note(url) tool:
    ${mcp}
-2. Make "/reel <url>" work in this project: copy ${repo}/.claude/skills/reel into this project's .claude/skills/ (create the folder if needed).${kind === 'codex' ? ' Also add a line to AGENTS.md: "When I paste an Instagram/TikTok/YouTube Shorts link, run: uv run --directory ' + repo + ' reelnotes <url> --json and report the takeaways."' : ''}
-3. Verify by running: uv run --directory "${repo}" reelnotes --version
+2. Make "/reel <url>" work in this project: copy ${repo}/.claude/skills/reel into this project's .claude/skills/ (create the folder if needed).${kind === 'codex' ? ' Also add a line to AGENTS.md: "When I paste an Instagram/TikTok/YouTube Shorts link, run: uv run --directory ' + repo + ' shortform-notes <url> --json and report the takeaways."' : ''}
+3. Verify by running: uv run --directory "${repo}" shortform-notes --version
 4. From now on, when I paste an Instagram Reel, TikTok, or YouTube Shorts link, import it with that tool and reply with the note path and the takeaways.`;
 }
 function renderDone() {
-  const c = st.current, dir = c.REELNOTES_DIR || '~/reelnotes';
-  $('summaryLine').textContent = `Summaries: ${NAMES[c.REELNOTES_SUMMARY_PROVIDER] || 'auto'}, transcripts: ${NAMES[c.REELNOTES_TRANSCRIBE_PROVIDER] || c.REELNOTES_TRANSCRIBE_PROVIDER || 'auto'}. Notes saved to ${dir.replace(st.home, '~')}.`;
+  const c = st.current, dir = c.SHORTFORM_NOTES_DIR || '~/shortform-notes';
+  $('summaryLine').textContent = `Summaries: ${NAMES[c.SHORTFORM_NOTES_SUMMARY_PROVIDER] || 'auto'}, transcripts: ${NAMES[c.SHORTFORM_NOTES_TRANSCRIBE_PROVIDER] || c.SHORTFORM_NOTES_TRANSCRIBE_PROVIDER || 'auto'}. Notes saved to ${dir.replace(st.home, '~')}.`;
   $('cfgPath').textContent = st.config_path.replace(st.home, '~');
   $('cmdCli').textContent = `cd "${st.repo_dir}"\n./start.sh https://www.instagram.com/reel/...`;
-  const kind = c.REELNOTES_SUMMARY_PROVIDER;
+  const kind = c.SHORTFORM_NOTES_SUMMARY_PROVIDER;
   const show = kind === 'claude-code' || kind === 'codex';
   $('skillify').classList.toggle('hidden', !show);
   if (show) {
@@ -304,7 +305,7 @@ async function tryImport() {
   } catch (e) { $('tryMsg').className = 'msg bad'; $('tryMsg').textContent = 'Error: ' + e; }
   finally { btn.disabled = false; }
 }
-async function openFolder() { await fetch('/api/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: st.current.REELNOTES_DIR || $('REELNOTES_DIR').value }) }); }
+async function openFolder() { await fetch('/api/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: st.current.SHORTFORM_NOTES_DIR || $('SHORTFORM_NOTES_DIR').value }) }); }
 function copyText(id, btn) { navigator.clipboard.writeText($(id).textContent).then(() => { btn.textContent = 'Copied'; setTimeout(() => btn.textContent = 'Copy', 1500); }); }
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 function err(id, text) { $(id).textContent = text; $(id).classList.remove('hidden'); }

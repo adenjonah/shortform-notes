@@ -84,5 +84,5 @@ def build_note(
     body += [content.transcript] if content.transcript else ["_No transcript._"]
     if content.warnings:
         body += ["", "## Import warnings", ""] + [f"- {w}" for w in content.warnings]
-    body += ["", f"*Imported by reelnotes on {imported_at.strftime('%Y-%m-%d %H:%M UTC')}*", ""]
+    body += ["", f"*Imported by shortform-notes on {imported_at.strftime('%Y-%m-%d %H:%M UTC')}*", ""]
     return "\n".join(front + [""] + body)

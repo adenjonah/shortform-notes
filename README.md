@@ -1,43 +1,89 @@
-# reelnotes
+# shortform-notes
 
-Turn Instagram Reels, TikToks and YouTube Shorts into Markdown notes with one command. Each note contains the caption, the transcript, and a model-written summary.
+Turn Instagram Reels, TikToks and YouTube Shorts into Markdown notes: caption, transcript, and a short summary with the takeaways. One command, no API key required.
 
 ```
-$ reelnotes https://www.instagram.com/reel/DQCkNLtgqEe/
+$ shortform-notes https://www.instagram.com/reel/DQCkNLtgqEe/
 
-saved reels/2025-10-20-teddysphotos-symmetry-with-karan-aujla.md  (sources: caption, transcript)
-  Symmetry with Karan Aujla on Play Remixes EP
-  The creator promotes the release of the track Symmetry featuring Karan Aujla ...
-  - The song Symmetry features Karan Aujla (@karanaujla).
-  - Karan Aujla taught the creator Punjabi for the video's bit.
+saved ~/shortform-notes/2025-10-20-teddysphotos-symmetry-with-karan-aujla-play-remixes-ep.md  (sources: caption, transcript)
+  Symmetry with Karan Aujla, Play Remixes EP
+  The video promotes the song Symmetry featuring Karan Aujla, released as part of the Play remixes EP. The creator says Karan Aujla taught them Punjabi for a bit in the video and asks viewers how they did.
+  - Song: Symmetry featuring Karan Aujla (@karanaujla)
+  - Released as part of the Play remixes EP, out now
+  - Karan Aujla taught the creator Punjabi for the bit shown in the video
+  - The creator asks viewers to judge how their Punjabi sounded
 ```
 
-An API key is optional. If [Claude Code](https://claude.com/claude-code) or [Codex CLI](https://developers.openai.com/codex/cli) is installed, summaries run through that subscription. With the `[local]` extra, transcripts run on your CPU with faster-whisper. With an OpenAI or Anthropic key, both steps run through the API at about $0.004 per reel.
+The summary can run through Claude Code or Codex (the subscription you already have), or through an OpenAI or Anthropic API key. Transcripts come from OpenAI or from Whisper running offline on your own machine. Everything degrades on its own: with nothing configured you still get the caption and metadata.
 
-The intended use is saving a recipe or tip you would otherwise lose in a bookmarks list. Notes are plain Markdown with YAML frontmatter and work in Obsidian, Logseq, or any folder.
+Notes are plain Markdown with YAML frontmatter, so they work in Obsidian, Logseq, or a folder.
 
 ## Quick start
 
 ```bash
-git clone https://github.com/adenjonah/reel-notes && cd reel-notes && ./start.sh
+git clone https://github.com/adenjonah/shortform-notes && cd shortform-notes && ./start.sh
 ```
 
 `start.sh` installs [uv](https://docs.astral.sh/uv/) if it is missing, uv installs Python and every dependency, and then the script asks one question:
 
 ```
-How do you want to set up reelnotes?
+How do you want to set up shortform-notes?
   1) In the browser (recommended if you are not used to the terminal)
   2) In this terminal
 ```
 
-Both paths ask the same things (how to run the AI, how to transcribe, where to save notes) and write the same config file, `~/.config/reelnotes/config.env`. The browser path opens a local page at 127.0.0.1 and ends with a box where you paste a link and see the note. The terminal path is `reelnotes setup`, a short numbered wizard. Nothing on your machine is scanned; both only ask.
+Windows: run `start.ps1`. macOS users who prefer not to open a terminal can double-click `Start.command`.
 
-Windows: run `start.ps1`. macOS users who prefer not to open a terminal can double-click `Start.command`. Once a config exists, `./start.sh` opens the import page directly, `./start.sh setup` re-runs the wizard, and `./start.sh <url>` imports from the terminal.
+### Browser setup
+
+Option 1 opens a local page at 127.0.0.1. Four steps, then a box to paste a link.
+
+**Step 1. Where the summary runs.** Claude Code and Codex need no key. The API options show a key field; the key is written to the local config file and nowhere else.
+
+![Step 1: where the summary runs](docs/screenshots/step-1.png)
+
+**Step 2. How audio is transcribed.** OpenAI (best quality, needs a key), offline Whisper (free, private, downloads a 75 MB model on first use), or skip.
+
+![Step 2: transcription](docs/screenshots/step-2.png)
+
+**Step 3. Where notes are saved.** Any folder. For Obsidian, use a folder inside the vault. An optional "who the notes are for" line shapes the summary.
+
+![Step 3: save location](docs/screenshots/step-3.png)
+
+**Step 4. Try one.** Paste a link and the note appears below with its title, summary, takeaways, and the full file. If you chose Claude Code or Codex, this page also shows a prompt to paste into that tool once; after that, pasting a reel link in any session imports it.
+
+![Step 4: import a link, plus the Claude Code prompt](docs/screenshots/step-4.png)
+
+### Terminal setup
+
+Option 2 runs `shortform-notes setup`, a numbered wizard that asks the same four questions and writes the same config file:
+
+```
+1/4  Where should the summary run?
+  1) Claude Code: uses your Claude subscription through the claude CLI, no API key
+  2) Codex CLI: uses your ChatGPT subscription through the codex CLI, no API key
+  3) OpenAI API key: pay per use, about $0.001 per reel; also enables the best transcription
+  4) Anthropic API key: pay per use with Claude via the API
+  5) No summary: save the caption, transcript and metadata only
+Choose 1-5 [1]:
+```
+
+Both paths write `~/.config/shortform-notes/config.env`. Once it exists, `./start.sh` opens the import page directly, `./start.sh setup` re-runs the wizard, and `./start.sh <url>` imports from the terminal. Nothing on your machine is scanned; both paths only ask.
+
+### Everyday use
+
+```bash
+./start.sh https://www.tiktok.com/@chef/video/7301234567890123456     # one link
+./start.sh <url1> <url2> <url3>                                        # several, one note each
+./start.sh <url> --json                                                # machine-readable output
+```
+
+Or, from Claude Code after pasting the prompt from step 4: drop a link into the chat and ask for the takeaways.
 
 ### Install as a CLI instead
 
 ```bash
-pipx install "reelnotes[all] @ git+https://github.com/adenjonah/reel-notes"
+pipx install "shortform-notes[all] @ git+https://github.com/adenjonah/shortform-notes"
 ```
 
 Requires Python 3.10+. ffmpeg is not needed. Extras:
@@ -53,7 +99,7 @@ Requires Python 3.10+. ffmpeg is not needed. Extras:
 
 ## Backends for the two model steps
 
-Two steps need a model: **transcribing** the audio and **summarizing** the text. Each step has several backends. `reelnotes` picks the first available one in the order below; configuration is only needed to override that choice.
+Two steps need a model: **transcribing** the audio and **summarizing** the text. Each step has several backends. `shortform-notes` picks the first available one in the order below; configuration is only needed to override that choice.
 
 ```
 summary     OPENAI_API_KEY, then ANTHROPIC_API_KEY, then `claude` on PATH, then `codex` on PATH, else none
@@ -65,7 +111,7 @@ transcript  OPENAI_API_KEY, then faster-whisper if installed, else none
 ```bash
 export OPENAI_API_KEY=sk-...          # transcription (gpt-4o-mini-transcribe) + summaries (gpt-4o-mini)
 export ANTHROPIC_API_KEY=sk-ant-...   # summaries with Claude instead (claude-opus-5)
-reelnotes <url>
+shortform-notes <url>
 ```
 
 ### Option B: Claude Code or Codex (no key)
@@ -73,9 +119,9 @@ reelnotes <url>
 If `claude` or `codex` is on your PATH and logged in, no further setup is needed:
 
 ```bash
-reelnotes <url>                        # auto-detects
-reelnotes --summary claude-code <url>  # or pin one
-reelnotes --summary codex <url>
+shortform-notes <url>                        # auto-detects
+shortform-notes --summary claude-code <url>  # or pin one
+shortform-notes --summary codex <url>
 ```
 
 Each reel is one subprocess call with the prompt on stdin:
@@ -83,34 +129,34 @@ Each reel is one subprocess call with the prompt on stdin:
 - Claude Code: `claude -p --output-format json --tools "" --disable-slash-commands --no-session-persistence`
 - Codex: `codex exec --sandbox read-only --ask-for-approval never --output-last-message <tmp> -`
 
-All tools are disabled and no session is persisted. The agent receives only the caption and transcript. Set `REELNOTES_CLAUDE_CODE_MODEL` / `REELNOTES_CODEX_MODEL` to pick a model; otherwise the CLI's own default is used.
+All tools are disabled and no session is persisted. The agent receives only the caption and transcript. Set `SHORTFORM_NOTES_CLAUDE_CODE_MODEL` / `SHORTFORM_NOTES_CODEX_MODEL` to pick a model; otherwise the CLI's own default is used.
 
 ### Option C: fully offline transcript
 
 ```bash
-pip install "reelnotes[local]"
-reelnotes --transcribe local <url>     # auto-detected once faster-whisper is installed and no OPENAI_API_KEY is set
+pip install "shortform-notes[local]"
+shortform-notes --transcribe local <url>     # auto-detected once faster-whisper is installed and no OPENAI_API_KEY is set
 ```
 
-`REELNOTES_WHISPER_MODEL` picks the model size (`tiny`, `base`, `small`, `medium`, `large-v3`; default `base`). Combined with Option B, no API key is used at any step.
+`SHORTFORM_NOTES_WHISPER_MODEL` picks the model size (`tiny`, `base`, `small`, `medium`, `large-v3`; default `base`). Combined with Option B, no API key is used at any step.
 
 ### Configuration reference
 
-The setup page writes `~/.config/reelnotes/config.env`; the CLI, MCP server and Claude Code skill all read it. Real environment variables override it, and flags override both:
+The setup page writes `~/.config/shortform-notes/config.env`; the CLI, MCP server and Claude Code skill all read it. Real environment variables override it, and flags override both:
 
 | Variable | Flag | Default | What it does |
 |---|---|---|---|
-| `REELNOTES_SUMMARY_PROVIDER` | `--summary` | `auto` | `openai`, `anthropic`, `claude-code`, `codex`, `none` |
-| `REELNOTES_TRANSCRIBE_PROVIDER` | `--transcribe` | `auto` | `openai`, `local`, `none` |
-| `REELNOTES_DIR` | `-o/--out` | `reels` | Output directory (point it at your vault) |
-| `REELNOTES_AUDIENCE` | | `the reader` | Who the summary is written for, e.g. `Jonah, a home cook` |
-| `REELNOTES_CLAUDE_CODE_MODEL` | | CLI default | Model for `claude -p` |
-| `REELNOTES_CODEX_MODEL` | | CLI default | Model for `codex exec` |
-| `REELNOTES_WHISPER_MODEL` | | `base` | faster-whisper model size |
-| `REELNOTES_OPENAI_MODEL` | | `gpt-4o-mini` | OpenAI summary model |
-| `REELNOTES_ANTHROPIC_MODEL` | | `claude-opus-5` | Anthropic summary model |
+| `SHORTFORM_NOTES_SUMMARY_PROVIDER` | `--summary` | `auto` | `openai`, `anthropic`, `claude-code`, `codex`, `none` |
+| `SHORTFORM_NOTES_TRANSCRIBE_PROVIDER` | `--transcribe` | `auto` | `openai`, `local`, `none` |
+| `SHORTFORM_NOTES_DIR` | `-o/--out` | `reels` | Output directory (point it at your vault) |
+| `SHORTFORM_NOTES_AUDIENCE` | | `the reader` | Who the summary is written for, e.g. `Jonah, a home cook` |
+| `SHORTFORM_NOTES_CLAUDE_CODE_MODEL` | | CLI default | Model for `claude -p` |
+| `SHORTFORM_NOTES_CODEX_MODEL` | | CLI default | Model for `codex exec` |
+| `SHORTFORM_NOTES_WHISPER_MODEL` | | `base` | faster-whisper model size |
+| `SHORTFORM_NOTES_OPENAI_MODEL` | | `gpt-4o-mini` | OpenAI summary model |
+| `SHORTFORM_NOTES_ANTHROPIC_MODEL` | | `claude-opus-5` | Anthropic summary model |
 
-`reelnotes --help` lists every option. `--json` gives machine-readable output; `--no-transcript` skips the audio download.
+`shortform-notes --help` lists every option. `--json` gives machine-readable output; `--no-transcript` skips the audio download.
 
 ## Supported links
 
@@ -186,13 +232,13 @@ Every stage degrades independently: with no transcription backend the note is ca
 Two optional integrations ship in the repo:
 
 - **`/reel <url>` slash command**: `.claude/skills/reel/SKILL.md`. Clone the repo (or copy that folder into your own project's `.claude/skills/`) and Claude Code runs the pipeline and reports the takeaways in chat.
-- **MCP server**: `.mcp.json` registers `reelnotes mcp` (stdio). Any MCP client (Claude Code, Claude Desktop) then gets an `import_reel_note(url)` tool. Install with the `mcp` extra.
+- **MCP server**: `.mcp.json` registers `shortform-notes mcp` (stdio). Any MCP client (Claude Code, Claude Desktop) then gets an `import_shortform_note(url)` tool. Install with the `mcp` extra.
 
 Both call the same `import_reel()` function, which can also be used directly:
 
 ```python
 import asyncio
-from reelnotes import import_reel
+from shortform-notes import import_reel
 
 result = asyncio.run(import_reel("https://youtube.com/shorts/dQw4w9WgXcQ"))
 print(result.path, result.takeaways)
@@ -203,14 +249,14 @@ print(result.path, result.takeaways)
 - Public posts only. Private accounts, age-gated and login-walled content cannot be fetched.
 - No OCR of on-screen text. Overlay-only recipes with no caption and no narration produce a thin note.
 - Music-only clips download but transcribe to nothing; the note records this in its warnings.
-- Local Whisper (`base` on CPU) is weaker than the OpenAI backend on music-backed or non-English speech and returns an empty transcript rather than a guess. Try `REELNOTES_WHISPER_MODEL=small` or `medium`, or set `OPENAI_API_KEY`.
+- Local Whisper (`base` on CPU) is weaker than the OpenAI backend on music-backed or non-English speech and returns an empty transcript rather than a guess. Try `SHORTFORM_NOTES_WHISPER_MODEL=small` or `medium`, or set `OPENAI_API_KEY`.
 - Instagram rate-limits datacenter IPs more aggressively than residential ones. Empty embeds on a server are usually this rate limit.
 - One video at a time is the intended use. It is a personal-notes tool. Bulk scraping is out of scope; respect the platforms' terms and creators' work.
 
 ## Development
 
 ```bash
-git clone https://github.com/adenjonah/reel-notes && cd reel-notes
+git clone https://github.com/adenjonah/shortform-notes && cd shortform-notes
 python -m venv .venv && . .venv/bin/activate
 pip install -e ".[all,local,dev]"
 pytest -q && ruff check src tests

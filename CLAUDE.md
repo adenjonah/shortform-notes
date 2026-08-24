@@ -1,4 +1,4 @@
-# reelnotes
+# shortform-notes
 
 Python 3.10+ package, `src/` layout. `pip install -e ".[all,dev]"` then `pytest -q` and `ruff check src tests`.
 
@@ -11,4 +11,4 @@ Rules:
 - Tests must not hit the network or spawn CLIs: patch `instagram.fetch_embed`, `media.download_media`, `summarize._run_cli`, and the `_summarize_*` functions.
 - Backend selection lives in `config.detect_*_provider`; `summarize._BACKENDS` maps names to function *names* (late-bound so tests can patch).
 
-Slash command `/reel <url>` lives in `.claude/skills/reel/`; `.mcp.json` exposes the pipeline as an MCP tool (`reelnotes mcp`).
+Slash command `/reel <url>` lives in `.claude/skills/reel/`; `.mcp.json` exposes the pipeline as an MCP tool (`shortform-notes mcp`).

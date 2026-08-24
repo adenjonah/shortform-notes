@@ -10,18 +10,18 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
   irm https://astral.sh/uv/install.ps1 | iex
   $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
 }
-Write-Host "Installing Python 3.12 and reelnotes dependencies. The first run takes about a minute."
+Write-Host "Installing Python 3.12 and shortform-notes dependencies. The first run takes about a minute."
 uv python install 3.12 --quiet
 uv sync --python 3.12 --extra all --extra local --upgrade-package yt-dlp --quiet
 
-if ($args.Count -gt 0) { uv run reelnotes @args; exit $LASTEXITCODE }
+if ($args.Count -gt 0) { uv run shortform-notes @args; exit $LASTEXITCODE }
 
-$config = if ($env:REELNOTES_CONFIG) { $env:REELNOTES_CONFIG } else { "$env:USERPROFILE\.config\reelnotes\config.env" }
-if (Test-Path $config) { uv run reelnotes web; exit $LASTEXITCODE }
+$config = if ($env:SHORTFORM_NOTES_CONFIG) { $env:SHORTFORM_NOTES_CONFIG } else { "$env:USERPROFILE\.config\shortform-notes\config.env" }
+if (Test-Path $config) { uv run shortform-notes web; exit $LASTEXITCODE }
 
 Write-Host ""
-Write-Host "How do you want to set up reelnotes?"
+Write-Host "How do you want to set up shortform-notes?"
 Write-Host "  1) In the browser (recommended if you are not used to the terminal)"
 Write-Host "  2) In this terminal"
 $choice = Read-Host "Choose 1 or 2 [1]"
-if ($choice -eq "2") { uv run reelnotes setup } else { uv run reelnotes web }
+if ($choice -eq "2") { uv run shortform-notes setup } else { uv run shortform-notes web }

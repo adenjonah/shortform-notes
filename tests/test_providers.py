@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from reelnotes import config, summarize
-from reelnotes.summarize import SummaryError, extract_json
+from shortform_notes import config, summarize
+from shortform_notes.summarize import SummaryError, extract_json
 
 
 def settings(**overrides) -> config.Settings:
@@ -58,13 +58,13 @@ def test_detect_transcribe_provider():
 
 
 def test_load_settings_rejects_unknown_provider(monkeypatch):
-    monkeypatch.setenv("REELNOTES_SUMMARY_PROVIDER", "gemini")
+    monkeypatch.setenv("SHORTFORM_NOTES_SUMMARY_PROVIDER", "gemini")
     with pytest.raises(ValueError, match="summary provider"):
         config.load_settings()
 
 
 def test_load_settings_explicit_overrides_env(monkeypatch):
-    monkeypatch.setenv("REELNOTES_SUMMARY_PROVIDER", "none")
+    monkeypatch.setenv("SHORTFORM_NOTES_SUMMARY_PROVIDER", "none")
     monkeypatch.setenv("OPENAI_API_KEY", "sk")
     s = config.load_settings(summary_provider="codex", transcribe_provider="none")
     assert s.summary_provider == "codex"

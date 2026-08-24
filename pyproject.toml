@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "reelnotes"
+name = "shortform-notes"
 version = "0.1.0"
 description = "Turn Instagram Reels, TikToks and YouTube Shorts into Markdown notes: caption + transcript + AI summary."
 readme = "README.md"
@@ -32,16 +32,16 @@ all = ["openai>=1.50", "anthropic>=0.40", "mcp>=1.2"]
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6"]
 
 [project.scripts]
-reelnotes = "reelnotes.cli:main"
+shortform-notes = "shortform_notes.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/adenjonah/reel-notes"
+Homepage = "https://github.com/adenjonah/shortform-notes"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/reelnotes"]
+packages = ["src/shortform_notes"]
 
 [tool.hatch.build]
-include = ["src/reelnotes/**/*.py", "src/reelnotes/web/index.html"]
+include = ["src/shortform_notes/**/*.py", "src/shortform_notes/web/index.html"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

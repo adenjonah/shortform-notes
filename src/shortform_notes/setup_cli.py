@@ -1,4 +1,4 @@
-"""Terminal setup wizard: ``reelnotes setup``.
+"""Terminal setup wizard: ``shortform-notes setup``.
 
 Asks the same questions as the web page (summary backend, transcription,
 folder, audience) and writes the same config file, so either path leaves the
@@ -11,7 +11,7 @@ import getpass
 import sys
 from pathlib import Path
 
-from reelnotes import config
+from shortform_notes import config
 
 SUMMARY_CHOICES = [
     ("claude-code", "Claude Code", "uses your Claude subscription through the claude CLI, no API key"),
@@ -60,14 +60,14 @@ def _ask_secret(label: str, existing: str, ask_secret=getpass.getpass) -> str:
 def run_setup(ask=input, ask_secret=getpass.getpass) -> Path:
     """Interactive wizard. ``ask``/``ask_secret`` are injectable for tests."""
     current = config.read_config_file()
-    _say("reelnotes setup")
+    _say("shortform-notes setup")
     _say("Answers are saved to " + str(config.CONFIG_PATH) + ". Press Enter to accept a default.")
     _say()
 
     summary = _pick(
         "1/4  Where should the summary run?",
         SUMMARY_CHOICES,
-        current.get("REELNOTES_SUMMARY_PROVIDER") or "claude-code",
+        current.get("SHORTFORM_NOTES_SUMMARY_PROVIDER") or "claude-code",
         ask,
     )
     openai_key = current.get("OPENAI_API_KEY", "")
@@ -78,18 +78,18 @@ def run_setup(ask=input, ask_secret=getpass.getpass) -> Path:
         anthropic_key = _ask_secret("Anthropic API key", anthropic_key, ask_secret)
     _say()
 
-    transcribe_default = current.get("REELNOTES_TRANSCRIBE_PROVIDER") or ("openai" if openai_key else "local")
+    transcribe_default = current.get("SHORTFORM_NOTES_TRANSCRIBE_PROVIDER") or ("openai" if openai_key else "local")
     transcribe = _pick("2/4  How should audio be transcribed?", TRANSCRIBE_CHOICES, transcribe_default, ask)
     if transcribe == "openai" and not openai_key:
         openai_key = _ask_secret("OpenAI API key", "", ask_secret)
     _say()
 
-    default_dir = current.get("REELNOTES_DIR") or str(Path.home() / "reelnotes")
+    default_dir = current.get("SHORTFORM_NOTES_DIR") or str(Path.home() / "shortform-notes")
     folder = ask(f"3/4  Folder for notes [{default_dir}]: ").strip() or default_dir
     Path(folder).expanduser().mkdir(parents=True, exist_ok=True)
     _say()
 
-    default_audience = current.get("REELNOTES_AUDIENCE", "")
+    default_audience = current.get("SHORTFORM_NOTES_AUDIENCE", "")
     audience = ask(
         f"4/4  Who are the notes for? Optional, shapes the summary [{default_audience or 'the reader'}]: "
     ).strip()
@@ -99,10 +99,10 @@ def run_setup(ask=input, ask_secret=getpass.getpass) -> Path:
     path = config.write_config_file(
         {
             **current,
-            "REELNOTES_SUMMARY_PROVIDER": summary,
-            "REELNOTES_TRANSCRIBE_PROVIDER": transcribe,
-            "REELNOTES_DIR": folder,
-            "REELNOTES_AUDIENCE": audience,
+            "SHORTFORM_NOTES_SUMMARY_PROVIDER": summary,
+            "SHORTFORM_NOTES_TRANSCRIBE_PROVIDER": transcribe,
+            "SHORTFORM_NOTES_DIR": folder,
+            "SHORTFORM_NOTES_AUDIENCE": audience,
             "OPENAI_API_KEY": openai_key,
             "ANTHROPIC_API_KEY": anthropic_key,
         }
@@ -110,16 +110,16 @@ def run_setup(ask=input, ask_secret=getpass.getpass) -> Path:
     _say(f"Saved {path}")
     _say()
     _say("Next: import a link with")
-    _say("  reelnotes https://www.instagram.com/reel/...")
+    _say("  shortform-notes https://www.instagram.com/reel/...")
     if summary in ("claude-code", "codex"):
         tool = "Claude Code" if summary == "claude-code" else "Codex"
-        _say(f"To use it inside {tool}, run: reelnotes web  and copy the prompt on the last page.")
+        _say(f"To use it inside {tool}, run: shortform-notes web  and copy the prompt on the last page.")
     return path
 
 
 def main() -> int:
     if not sys.stdin.isatty():
-        _say("reelnotes setup needs an interactive terminal. Run: reelnotes web")
+        _say("shortform-notes setup needs an interactive terminal. Run: shortform-notes web")
         return 2
     try:
         run_setup()

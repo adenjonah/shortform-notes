@@ -7,11 +7,11 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from reelnotes import instagram, media, pipeline, urls
-from reelnotes.config import Settings
-from reelnotes.media import DownloadedMedia, MediaFetchError
-from reelnotes.note import ReelContent, build_note, note_filename, slugify
-from reelnotes.pipeline import ReelImportError, import_reel
+from shortform_notes import instagram, media, pipeline, urls
+from shortform_notes.config import Settings
+from shortform_notes.media import DownloadedMedia, MediaFetchError
+from shortform_notes.note import ReelContent, build_note, note_filename, slugify
+from shortform_notes.pipeline import ReelImportError, import_reel
 
 NOW = datetime(2026, 8, 23, 20, 30, tzinfo=timezone.utc)
 
@@ -197,7 +197,7 @@ async def test_import_reel_full_path(tmp_path):
         patch.object(media, "download_media", AsyncMock(return_value=downloaded(audio_path=str(tmp_path / "a.m4a")))),
         patch.object(pipeline, "transcribe", AsyncMock(return_value="spoken words")),
         patch(
-            "reelnotes.summarize._summarize_openai",
+            "shortform_notes.summarize._summarize_openai",
             AsyncMock(return_value={"title": "Symmetry", "summary": "S.", "takeaways": ["t1"]}),
         ),
     ):
@@ -213,7 +213,7 @@ async def test_import_reel_anthropic_summary(tmp_path):
     with (
         patch.object(media, "download_media", AsyncMock(return_value=downloaded(audio_path=None))),
         patch(
-            "reelnotes.summarize._summarize_anthropic",
+            "shortform_notes.summarize._summarize_anthropic",
             AsyncMock(return_value={"title": "T", "summary": "S", "takeaways": []}),
         ) as claude,
     ):
@@ -228,7 +228,7 @@ async def test_import_reel_summary_failure_degrades(tmp_path):
         patch.object(
             media, "download_media", AsyncMock(return_value=downloaded(caption="First line\nmore", audio_path=None))
         ),
-        patch("reelnotes.summarize._summarize_openai", AsyncMock(side_effect=RuntimeError("boom"))),
+        patch("shortform_notes.summarize._summarize_openai", AsyncMock(side_effect=RuntimeError("boom"))),
     ):
         result = await import_reel("https://youtube.com/shorts/dQw4w9WgXcQ", settings(tmp_path, openai=True), NOW)
     assert result.title == "First line"

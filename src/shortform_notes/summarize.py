@@ -23,7 +23,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from reelnotes.config import Settings
+from shortform_notes.config import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -210,7 +210,7 @@ def codex_argv(settings: Settings, last_message_path: str) -> list[str]:
 
 
 async def _summarize_codex(caption: str | None, transcript: str | None, settings: Settings) -> dict:
-    with tempfile.TemporaryDirectory(prefix="reelnotes-codex-") as tmpdir:
+    with tempfile.TemporaryDirectory(prefix="shortform-notes-codex-") as tmpdir:
         last_message = Path(tmpdir) / "last.txt"
         stdout = await _run_cli(codex_argv(settings, str(last_message)), _cli_prompt(caption, transcript, settings))
         text = last_message.read_text() if last_message.exists() else stdout

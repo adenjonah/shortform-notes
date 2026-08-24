@@ -1,4 +1,4 @@
-"""Local setup and import UI: ``reelnotes web``.
+"""Local setup and import UI: ``shortform-notes web``.
 
 No extra dependencies: stdlib ``http.server`` bound to 127.0.0.1 only, serving
 one HTML page and a few JSON endpoints. It writes the same config file the CLI,
@@ -20,8 +20,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
 
-from reelnotes import __version__, config
-from reelnotes.pipeline import ReelImportError, import_reel
+from shortform_notes import __version__, config
+from shortform_notes.pipeline import ReelImportError, import_reel
 
 logger = logging.getLogger(__name__)
 
@@ -30,13 +30,13 @@ HOST = "127.0.0.1"
 SAVABLE_KEYS = (
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
-    "REELNOTES_SUMMARY_PROVIDER",
-    "REELNOTES_TRANSCRIBE_PROVIDER",
-    "REELNOTES_DIR",
-    "REELNOTES_AUDIENCE",
-    "REELNOTES_CLAUDE_CODE_MODEL",
-    "REELNOTES_CODEX_MODEL",
-    "REELNOTES_WHISPER_MODEL",
+    "SHORTFORM_NOTES_SUMMARY_PROVIDER",
+    "SHORTFORM_NOTES_TRANSCRIBE_PROVIDER",
+    "SHORTFORM_NOTES_DIR",
+    "SHORTFORM_NOTES_AUDIENCE",
+    "SHORTFORM_NOTES_CLAUDE_CODE_MODEL",
+    "SHORTFORM_NOTES_CODEX_MODEL",
+    "SHORTFORM_NOTES_WHISPER_MODEL",
 )
 
 
@@ -71,11 +71,11 @@ def cli_warning(provider: str) -> str | None:
 
 
 def _load_index() -> bytes:
-    return files("reelnotes.web").joinpath("index.html").read_bytes()
+    return files("shortform_notes.web").joinpath("index.html").read_bytes()
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = f"reelnotes/{__version__}"
+    server_version = f"shortform-notes/{__version__}"
 
     def log_message(self, fmt: str, *args) -> None:  # quiet by default; -v shows them
         logger.info("%s " + fmt, self.address_string(), *args)
@@ -124,7 +124,7 @@ class Handler(BaseHTTPRequestHandler):
         data = self._read_json()
         existing = config.read_config_file()
         merged = {**existing, **{k: str(data.get(k, existing.get(k, ""))).strip() for k in SAVABLE_KEYS}}
-        out_dir = merged.get("REELNOTES_DIR")
+        out_dir = merged.get("SHORTFORM_NOTES_DIR")
         if out_dir:
             try:
                 Path(out_dir).expanduser().mkdir(parents=True, exist_ok=True)
@@ -137,7 +137,7 @@ class Handler(BaseHTTPRequestHandler):
             {
                 "saved": str(path),
                 "detect": describe(),
-                "warning": cli_warning(merged.get("REELNOTES_SUMMARY_PROVIDER", "")),
+                "warning": cli_warning(merged.get("SHORTFORM_NOTES_SUMMARY_PROVIDER", "")),
             },
         )
 
@@ -187,10 +187,10 @@ def _bind(preferred: int, attempts: int = 20) -> ThreadingHTTPServer:
 
 
 def serve(port: int | None = None, open_browser: bool = True) -> None:
-    server = _bind(port or int(os.environ.get("REELNOTES_PORT") or DEFAULT_PORT))
+    server = _bind(port or int(os.environ.get("SHORTFORM_NOTES_PORT") or DEFAULT_PORT))
     port = server.server_address[1]
     url = f"http://{HOST}:{port}/"
-    print(f"reelnotes {__version__}: setup and import UI at {url}  (Ctrl+C to stop)", flush=True)
+    print(f"shortform-notes {__version__}: setup and import UI at {url}  (Ctrl+C to stop)", flush=True)
     if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:

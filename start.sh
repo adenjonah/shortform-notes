@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One command to set up and run reelnotes. Safe to re-run; each run refreshes yt-dlp.
+# One command to set up and run shortform-notes. Safe to re-run; each run refreshes yt-dlp.
 #   ./start.sh            first run: asks whether to set up in the browser or in this terminal
 #   ./start.sh web        open the browser setup and import page
 #   ./start.sh setup      run the terminal setup wizard
@@ -13,25 +13,25 @@ if ! command -v uv >/dev/null 2>&1; then
   export PATH="$HOME/.local/bin:$PATH"
 fi
 
-echo "Installing Python 3.12 and reelnotes dependencies. The first run takes about a minute."
+echo "Installing Python 3.12 and shortform-notes dependencies. The first run takes about a minute."
 uv python install 3.12 --quiet 2>/dev/null || true
 uv sync --python 3.12 --extra all --extra local --upgrade-package yt-dlp --quiet
 
 if [ "$#" -gt 0 ]; then
-  exec uv run reelnotes "$@"
+  exec uv run shortform-notes "$@"
 fi
 
-CONFIG="${REELNOTES_CONFIG:-$HOME/.config/reelnotes/config.env}"
+CONFIG="${SHORTFORM_NOTES_CONFIG:-$HOME/.config/shortform-notes/config.env}"
 if [ -f "$CONFIG" ] || [ ! -t 0 ]; then
-  exec uv run reelnotes web
+  exec uv run shortform-notes web
 fi
 
 echo
-echo "How do you want to set up reelnotes?"
+echo "How do you want to set up shortform-notes?"
 echo "  1) In the browser (recommended if you are not used to the terminal)"
 echo "  2) In this terminal"
 read -r -p "Choose 1 or 2 [1]: " choice
 case "${choice:-1}" in
-  2) exec uv run reelnotes setup ;;
-  *) exec uv run reelnotes web ;;
+  2) exec uv run shortform-notes setup ;;
+  *) exec uv run shortform-notes web ;;
 esac

@@ -1,10 +1,10 @@
 {
   "mcpServers": {
-    "reelnotes": {
-      "command": "reelnotes",
+    "shortform-notes": {
+      "command": "shortform-notes",
       "args": ["mcp"],
       "env": {
-        "REELNOTES_DIR": "reels"
+        "SHORTFORM_NOTES_DIR": "reels"
       }
     }
   }

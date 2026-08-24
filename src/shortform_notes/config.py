@@ -1,6 +1,6 @@
 """Runtime settings, all from environment variables (CLI flags override them).
 
-Everything is optional. reelnotes picks the best available backend for each
+Everything is optional. shortform-notes picks the best available backend for each
 LLM step, so it works with:
 
 * an API key           OPENAI_API_KEY and/or ANTHROPIC_API_KEY
@@ -18,8 +18,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_OUTPUT_DIR = "reels"
-# Written by the setup UI (`reelnotes web`); real environment variables always win over it.
-CONFIG_PATH = Path(os.environ.get("REELNOTES_CONFIG") or "~/.config/reelnotes/config.env").expanduser()
+# Written by the setup UI (`shortform-notes web`); real environment variables always win over it.
+CONFIG_PATH = Path(os.environ.get("SHORTFORM_NOTES_CONFIG") or "~/.config/shortform-notes/config.env").expanduser()
 DEFAULT_OPENAI_TRANSCRIBE_MODEL = "gpt-4o-mini-transcribe"
 DEFAULT_OPENAI_SUMMARY_MODEL = "gpt-4o-mini"
 DEFAULT_ANTHROPIC_SUMMARY_MODEL = "claude-opus-5"
@@ -86,7 +86,7 @@ def detect_transcribe_provider(openai_key: str | None) -> str:
 
 def read_config_file(path: Path | None = None) -> dict[str, str]:
     """Parse a KEY=VALUE file (comments and blank lines ignored). A missing file yields {}."""
-    path = path or CONFIG_PATH  # resolved at call time so tests (and REELNOTES_CONFIG) can redirect it
+    path = path or CONFIG_PATH  # resolved at call time so tests (and SHORTFORM_NOTES_CONFIG) can redirect it
     if not path.exists():
         return {}
     values: dict[str, str] = {}
@@ -103,7 +103,7 @@ def write_config_file(values: dict[str, str], path: Path | None = None) -> Path:
     """Write KEY=VALUE pairs (empty values dropped), owner-readable only since it may hold API keys."""
     path = path or CONFIG_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    lines = ["# reelnotes configuration, written by reelnotes setup. Edit freely.", ""]
+    lines = ["# shortform-notes configuration, written by shortform-notes setup. Edit freely.", ""]
     lines += [f"{k}={v}" for k, v in sorted(values.items()) if v]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     path.chmod(0o600)
@@ -132,24 +132,24 @@ def load_settings(
     openai_key = env.get("OPENAI_API_KEY") or None
     anthropic_key = env.get("ANTHROPIC_API_KEY") or None
 
-    summary = summary_provider or env.get("REELNOTES_SUMMARY_PROVIDER") or "auto"
+    summary = summary_provider or env.get("SHORTFORM_NOTES_SUMMARY_PROVIDER") or "auto"
     summary = detect_summary_provider(openai_key, anthropic_key) if summary == "auto" else summary
-    transcribe = transcribe_provider or env.get("REELNOTES_TRANSCRIBE_PROVIDER") or "auto"
-    if env.get("REELNOTES_TRANSCRIBE", "1").lower() in _FALSE:  # legacy off switch
+    transcribe = transcribe_provider or env.get("SHORTFORM_NOTES_TRANSCRIBE_PROVIDER") or "auto"
+    if env.get("SHORTFORM_NOTES_TRANSCRIBE", "1").lower() in _FALSE:  # legacy off switch
         transcribe = "none"
     transcribe = detect_transcribe_provider(openai_key) if transcribe == "auto" else transcribe
 
     return Settings(
-        output_dir=Path(output_dir or env.get("REELNOTES_DIR") or DEFAULT_OUTPUT_DIR).expanduser(),
+        output_dir=Path(output_dir or env.get("SHORTFORM_NOTES_DIR") or DEFAULT_OUTPUT_DIR).expanduser(),
         openai_api_key=openai_key,
         anthropic_api_key=anthropic_key,
         summary_provider=_validate(summary, SUMMARY_PROVIDERS, "summary provider"),
         transcribe_provider=_validate(transcribe, TRANSCRIBE_PROVIDERS, "transcribe provider"),
-        openai_transcribe_model=env.get("REELNOTES_TRANSCRIBE_MODEL", DEFAULT_OPENAI_TRANSCRIBE_MODEL),
-        openai_summary_model=env.get("REELNOTES_OPENAI_MODEL", DEFAULT_OPENAI_SUMMARY_MODEL),
-        anthropic_summary_model=env.get("REELNOTES_ANTHROPIC_MODEL", DEFAULT_ANTHROPIC_SUMMARY_MODEL),
-        claude_code_model=env.get("REELNOTES_CLAUDE_CODE_MODEL") or None,
-        codex_model=env.get("REELNOTES_CODEX_MODEL") or None,
-        whisper_model=env.get("REELNOTES_WHISPER_MODEL", DEFAULT_WHISPER_MODEL),
-        audience=env.get("REELNOTES_AUDIENCE", "the reader"),
+        openai_transcribe_model=env.get("SHORTFORM_NOTES_TRANSCRIBE_MODEL", DEFAULT_OPENAI_TRANSCRIBE_MODEL),
+        openai_summary_model=env.get("SHORTFORM_NOTES_OPENAI_MODEL", DEFAULT_OPENAI_SUMMARY_MODEL),
+        anthropic_summary_model=env.get("SHORTFORM_NOTES_ANTHROPIC_MODEL", DEFAULT_ANTHROPIC_SUMMARY_MODEL),
+        claude_code_model=env.get("SHORTFORM_NOTES_CLAUDE_CODE_MODEL") or None,
+        codex_model=env.get("SHORTFORM_NOTES_CODEX_MODEL") or None,
+        whisper_model=env.get("SHORTFORM_NOTES_WHISPER_MODEL", DEFAULT_WHISPER_MODEL),
+        audience=env.get("SHORTFORM_NOTES_AUDIENCE", "the reader"),
     )

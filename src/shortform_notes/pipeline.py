@@ -19,11 +19,11 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from reelnotes import instagram, media, urls
-from reelnotes.config import Settings, load_settings
-from reelnotes.note import ReelContent, build_note, note_filename
-from reelnotes.summarize import summarize
-from reelnotes.transcribe import transcribe
+from shortform_notes import instagram, media, urls
+from shortform_notes.config import Settings, load_settings
+from shortform_notes.note import ReelContent, build_note, note_filename
+from shortform_notes.summarize import summarize
+from shortform_notes.transcribe import transcribe
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +87,7 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> ReelConte
             warnings.append("Audio downloaded but transcription returned nothing")
     elif not settings.can_transcribe:
         warnings.append(
-            'Transcription skipped (set OPENAI_API_KEY, or pip install "reelnotes[local]" for offline Whisper)'
+            'Transcription skipped (set OPENAI_API_KEY, or pip install "shortform-notes[local]" for offline Whisper)'
         )
 
     sources = tuple(s for s, present in (("caption", caption), ("transcript", transcript)) if present)
@@ -128,7 +128,7 @@ async def import_reel(url: str, settings: Settings | None = None, now: datetime 
     if not clean:
         raise ReelImportError(f"not a supported Instagram / TikTok / YouTube Shorts link: {url}")
 
-    with tempfile.TemporaryDirectory(prefix="reelnotes-") as tmpdir:
+    with tempfile.TemporaryDirectory(prefix="shortform-notes-") as tmpdir:
         content = await gather_content(clean, tmpdir, settings)
     result = await summarize(content.caption, content.transcript, settings, title_hint=content.title)
 
