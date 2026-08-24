@@ -11,6 +11,7 @@ import sys
 from shortform_notes import __version__
 from shortform_notes.config import OCR_PROVIDERS, SUMMARY_PROVIDERS, TRANSCRIBE_PROVIDERS, load_settings
 from shortform_notes.pipeline import ReelImportError, import_reel
+from shortform_notes.summarize import MAX_VISION_FRAMES, vision_estimate
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -51,8 +52,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-ocr", action="store_true", help="turn OCR off even if the config enables it")
     parser.add_argument("--ocr-provider", choices=list(OCR_PROVIDERS), help="local (free), openai, or anthropic")
     parser.add_argument(
-        "--ocr-fps", type=float, help="frames sampled per second for OCR; default 1, use 0 for every frame"
+        "--ocr-fps",
+        type=float,
+        help="frames sampled per second, for both OCR and --vision; default 1, use 0 for every frame",
     )
+    parser.add_argument(
+        "--vision",
+        action="store_true",
+        help=(
+            "show the summary model the video: sampled frames go into the summary call itself "
+            f"(openai and anthropic backends only, at most {MAX_VISION_FRAMES} frames per video)"
+        ),
+    )
+    parser.add_argument("--no-vision", action="store_true", help="turn vision off even if the config enables it")
     parser.add_argument("--json", action="store_true", help="print machine-readable JSON instead of text")
     parser.add_argument("-v", "--verbose", action="store_true", help="show fetch/debug logs")
     parser.add_argument("--version", action="version", version=f"shortform-notes {__version__}")
@@ -81,14 +93,23 @@ async def _run(urls: list[str], args: argparse.Namespace) -> int:
         ocr=False if args.no_ocr else (True if args.ocr else None),
         ocr_provider=args.ocr_provider,
         ocr_fps=args.ocr_fps,
+        vision=False if args.no_vision else (True if args.vision else None),
     )
+    rate = f"{settings.ocr_fps:g} frames/s" if settings.ocr_fps else "every frame"
     if settings.ocr and settings.ocr_provider != "local" and not args.json:
         from shortform_notes.ocr import estimate
 
-        rate = f"{settings.ocr_fps:g} frames/s" if settings.ocr_fps else "every frame"
         for secs in (30, 60):
             note = estimate(secs, settings).describe()
             print(f"OCR on ({settings.ocr_provider}, {rate}): a {secs}s video is {note}", file=sys.stderr)
+    if settings.can_see_video and not args.json:
+        # One line, not two: past ~20s of video the frame cap makes every duration cost the same.
+        count, usd = vision_estimate(60, settings)
+        print(
+            f"vision on ({settings.summary_provider}, {rate}): a 60s video sends up to "
+            f"{count} frames, about ${usd:.3f}",
+            file=sys.stderr,
+        )
     failures = 0
     for url in urls:
         try:

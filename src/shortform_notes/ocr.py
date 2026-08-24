@@ -126,6 +126,11 @@ async def extract_frames(video_path: str, fps: float) -> list[Frame]:
     return await asyncio.to_thread(_extract_sync, video_path, fps)
 
 
+def timestamp(seconds: float) -> str:
+    mm, ss = divmod(int(seconds), 60)
+    return f"{mm:02d}:{ss:02d}"
+
+
 # ── OCR backends ───────────────────────────────────────────────────────
 
 
@@ -242,16 +247,21 @@ def merge_text(frames: list[Frame], texts: list[str]) -> str | None:
     for frame, text in zip(frames, texts, strict=False):
         clean = " ".join(text.split())
         if clean and clean != previous:
-            mm, ss = divmod(int(frame.seconds), 60)
-            lines.append(f"[{mm:02d}:{ss:02d}] {clean}")
+            lines.append(f"[{timestamp(frame.seconds)}] {clean}")
         if clean:
             previous = clean
     return "\n".join(lines) or None
 
 
-async def read_screen_text(video_path: str, settings: Settings) -> tuple[str | None, int]:
-    """Sample, de-duplicate and OCR frames. Returns (text, frames_read)."""
-    frames = await extract_frames(video_path, settings.ocr_fps)
+async def read_screen_text(
+    video_path: str, settings: Settings, frames: list[Frame] | None = None
+) -> tuple[str | None, int]:
+    """Sample, de-duplicate and OCR frames. Returns (text, frames_read).
+
+    ``frames`` lets a caller that already sampled the video (the vision path)
+    reuse them instead of decoding it a second time.
+    """
+    frames = await extract_frames(video_path, settings.ocr_fps) if frames is None else frames
     if not frames:
         return None, 0
     backend = globals()[_BACKENDS[settings.ocr_provider]]

@@ -68,7 +68,7 @@ Requires Python 3.10+. ffmpeg is not needed. Extras:
 | `openai` | API transcription + summaries | you have `OPENAI_API_KEY` |
 | `anthropic` | Claude API summaries | you have `ANTHROPIC_API_KEY` |
 | `local` | offline Whisper transcription (faster-whisper, ~75 MB model on first run) | you want transcripts without a key |
-| `ocr` | on-screen text from video frames (RapidOCR + OpenCV, no key) | the details are in text overlays, not speech |
+| `ocr` | frame sampling (OpenCV) plus on-screen text from those frames (RapidOCR, no key); also what `--vision` samples with | the details are in text overlays or on screen, not in speech |
 | `mcp` | MCP server for Claude Code / Claude Desktop | you want it as an editor tool |
 | `all` | `openai` + `anthropic` + `mcp` | |
 
@@ -137,6 +137,25 @@ Cost estimate, before de-duplication, using the vendors' published prices as of 
 
 The CLI prints the estimate for a 30 s and 60 s video before running a paid backend, and the setup page shows the same numbers next to the frame-rate field. Set `SHORTFORM_NOTES_OCR_ANTHROPIC_MODEL=claude-haiku-4-5` to cut the Claude figure by five. The `ocr` extra is installed by `start.sh`; for a manual install use `pip install "shortform-notes[ocr]"`.
 
+### Option E: show the model the video (vision), off by default
+
+OCR reads the words on screen. `--vision` goes further and hands the frames themselves to the summary model, so a video that shows its point rather than saying it — visual comedy, a technique demonstrated in silence, a result you only see — summarizes from what happens on screen instead of guessing from the caption.
+
+```bash
+shortform-notes --vision https://www.instagram.com/p/DS3DPehEnpA/
+shortform-notes --vision --ocr <url>        # frames are sampled once and used for both
+shortform-notes --vision --ocr-fps 2 <url>  # --ocr-fps is the sampling rate for both
+```
+
+It reuses the OCR path's machinery: the whole mp4 is downloaded, frames are sampled at `--ocr-fps` (1 per second by default), and near-identical frames are dropped before anything is sent. What is left goes into the summary call alongside the caption and transcript, and the note records `video` in its `sources`.
+
+Two limits worth knowing:
+
+- **Only the `openai` and `anthropic` summary backends accept images.** With `claude-code`, `codex` or `none`, the summary still runs on caption and transcript alone and the note carries a warning saying vision was skipped.
+- **At most 20 frames per video**, evenly spaced across it when de-duplication leaves more. A three-minute video therefore costs the same as a twenty-second one.
+
+At the 20-frame cap that is about $0.009 per video on `gpt-4o-mini` and about $0.10 on `claude-opus-5`, using the per-frame prices in the OCR table above. The CLI prints the estimate before running. Sampling frames needs the `ocr` extra (OpenCV), which `start.sh` installs; for a manual install use `pip install "shortform-notes[ocr]"`.
+
 ### Configuration reference
 
 The setup page writes `~/.config/shortform-notes/config.env`; the CLI, MCP server and Claude Code skill all read it. Real environment variables override it, and flags override both:
@@ -152,7 +171,8 @@ The setup page writes `~/.config/shortform-notes/config.env`; the CLI, MCP serve
 | `SHORTFORM_NOTES_WHISPER_MODEL` | | `base` | faster-whisper model size |
 | `SHORTFORM_NOTES_OCR` | `--ocr` / `--no-ocr` | `0` | Read on-screen text from video frames |
 | `SHORTFORM_NOTES_OCR_PROVIDER` | `--ocr-provider` | `auto` | `local` (free), `openai`, `anthropic`; auto picks openai when a key is set, else local |
-| `SHORTFORM_NOTES_OCR_FPS` | `--ocr-fps` | `1` | Frames read per second; `0` reads every frame |
+| `SHORTFORM_NOTES_OCR_FPS` | `--ocr-fps` | `1` | Frames sampled per second, for OCR and vision alike; `0` reads every frame |
+| `SHORTFORM_NOTES_VISION` | `--vision` / `--no-vision` | `0` | Send the sampled frames to the summary model (`openai` / `anthropic` only) |
 | `SHORTFORM_NOTES_OCR_OPENAI_MODEL` | | `gpt-4o-mini` | OpenAI vision model for OCR |
 | `SHORTFORM_NOTES_OCR_ANTHROPIC_MODEL` | | `claude-opus-5` | Anthropic vision model for OCR |
 | `SHORTFORM_NOTES_OPENAI_MODEL` | | `gpt-4o-mini` | OpenAI summary model |
@@ -235,6 +255,7 @@ URL -> detect platform
                         v
               transcribe: OpenAI API  |  local faster-whisper  |  skip
               OCR (optional): sample frames -> local RapidOCR | OpenAI vision | Claude vision
+              vision (optional): those same frames ride into the summary call
                         |
                         v
               summarize:  OpenAI API  |  Anthropic API  |  claude -p  |  codex exec  |  skip

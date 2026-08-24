@@ -31,6 +31,7 @@ def settings(tmp_path, **over) -> config.Settings:
         ocr_fps=1.0,
         ocr_openai_model="gpt-4o-mini",
         ocr_anthropic_model="claude-opus-5",
+        vision=False,
     )
     return config.Settings(**{**base, **over})
 

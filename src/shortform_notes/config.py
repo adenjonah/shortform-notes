@@ -26,6 +26,8 @@ DEFAULT_ANTHROPIC_SUMMARY_MODEL = "claude-opus-5"
 DEFAULT_WHISPER_MODEL = "base"
 
 SUMMARY_PROVIDERS = ("openai", "anthropic", "claude-code", "codex", "none")
+# Summary backends whose SDKs accept images in the same call as the prompt.
+VISION_SUMMARY_PROVIDERS = ("openai", "anthropic")
 OCR_PROVIDERS = ("local", "openai", "anthropic")
 DEFAULT_OCR_FPS = 1.0  # one frame per second; 0 means every frame
 DEFAULT_OCR_OPENAI_MODEL = "gpt-4o-mini"
@@ -50,13 +52,19 @@ class Settings:
     audience: str
     ocr: bool  # read on-screen text from sampled video frames (costs more time, and money on API backends)
     ocr_provider: str  # one of OCR_PROVIDERS
-    ocr_fps: float  # frames sampled per second; 0 = every frame
+    ocr_fps: float  # frames sampled per second, for OCR and vision alike; 0 = every frame
     ocr_openai_model: str
     ocr_anthropic_model: str  # who the note is for; shapes the summary prompt
+    vision: bool  # attach the sampled frames to the summary call so the model sees the video
 
     @property
     def can_transcribe(self) -> bool:
         return self.transcribe_provider != "none"
+
+    @property
+    def can_see_video(self) -> bool:
+        """Vision was asked for *and* the chosen summary backend can read images."""
+        return self.vision and self.summary_provider in VISION_SUMMARY_PROVIDERS
 
     @property
     def can_summarize(self) -> bool:
@@ -138,6 +146,7 @@ def load_settings(
     ocr: bool | None = None,
     ocr_provider: str | None = None,
     ocr_fps: float | None = None,
+    vision: bool | None = None,
 ) -> Settings:
     """Build settings from env, with optional explicit overrides (CLI flags win)."""
     env = _env()
@@ -157,6 +166,7 @@ def load_settings(
         ocr_backend = "openai" if openai_key and _has_module("openai") else "local"
     fps_raw = env.get("SHORTFORM_NOTES_OCR_FPS", "")
     fps = float(fps_raw) if ocr_fps is None and fps_raw else (DEFAULT_OCR_FPS if ocr_fps is None else ocr_fps)
+    vision_on = (env.get("SHORTFORM_NOTES_VISION", "0").lower() not in _FALSE) if vision is None else vision
     return Settings(
         output_dir=Path(output_dir or env.get("SHORTFORM_NOTES_DIR") or DEFAULT_OUTPUT_DIR).expanduser(),
         openai_api_key=openai_key,
@@ -175,4 +185,5 @@ def load_settings(
         ocr_fps=max(0.0, fps),
         ocr_openai_model=env.get("SHORTFORM_NOTES_OCR_OPENAI_MODEL", DEFAULT_OCR_OPENAI_MODEL),
         ocr_anthropic_model=env.get("SHORTFORM_NOTES_OCR_ANTHROPIC_MODEL", DEFAULT_OCR_ANTHROPIC_MODEL),
+        vision=vision_on,
     )
