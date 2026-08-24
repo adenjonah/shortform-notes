@@ -30,6 +30,11 @@ def settings(tmp_path: Path, openai: bool = False, anthropic: bool = False, prov
         codex_model=None,
         whisper_model="base",
         audience="the reader",
+        ocr=False,
+        ocr_provider="local",
+        ocr_fps=1.0,
+        ocr_openai_model="gpt-4o-mini",
+        ocr_anthropic_model="claude-opus-5",
     )
 
 
@@ -53,6 +58,7 @@ def embed_html(caption: str = "Symmetry featuring @karanaujla out now", **overri
 def downloaded(**overrides) -> DownloadedMedia:
     base = dict(
         audio_path=None,
+        video_path=None,
         caption="yt-dlp description",
         creator_handle="chef",
         creator_name="Chef Name",
@@ -148,6 +154,7 @@ def test_build_note_sections():
         platform="instagram",
         caption="Cap line 1\n\nCap line 2",
         transcript="spoken words",
+        screen_text="[00:02] 2 cups flour",
         title=None,
         creator_handle="chef",
         creator_name="Chef",
@@ -166,6 +173,7 @@ def test_build_note_sections():
     assert "- one\n- two" in note
     assert "> Cap line 1\n>\n> Cap line 2" in note
     assert "## Transcript\n\nspoken words" in note
+    assert "## On-screen text\n\n[00:02] 2 cups flour" in note
     assert "- w1" in note
 
 

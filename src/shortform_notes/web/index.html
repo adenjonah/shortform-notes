@@ -115,6 +115,15 @@
       <input type="password" id="OPENAI_API_KEY_2" placeholder="sk-..." autocomplete="off">
       <div class="hint">Transcription runs on OpenAI's audio model. The key is stored in the local config file.</div>
     </div>
+    <h3>On-screen text (optional)</h3>
+    <p class="lead">Many recipe and tip videos put the details in text overlays rather than speech. Turning this on downloads the full video, samples frames, and reads the text in them. It is slower, and on a paid backend it costs extra per frame. Off by default.</p>
+    <div class="opts" id="ocrOpts"></div>
+    <div class="field hidden" id="ocrFpsField">
+      <label>Frames read per second</label>
+      <input type="text" id="SHORTFORM_NOTES_OCR_FPS" value="1">
+      <div class="hint">1 is the default and catches overlays that stay on screen. Use 0 to read every frame (about 30 times the frames and cost) for fast-cut videos. Identical consecutive frames are skipped before any paid call.</div>
+      <div class="hint" id="ocrEstimate"></div>
+    </div>
     <div class="msg bad hidden" id="step1Err"></div>
     <div class="nav"><button class="ghost" onclick="go(0)">Back</button><button class="primary" onclick="next1()">Next</button></div>
   </section>
@@ -159,7 +168,9 @@
 <script>
 const $ = (id) => document.getElementById(id);
 let st = null;
-const state = { summary: 'claude-code', transcribe: 'local' };
+const state = { summary: 'claude-code', transcribe: 'local', ocr: 'off' };
+// Per-frame prices used for the estimate shown to the user (vendor pricing pages, 2026-08-24).
+const OCR_USD_PER_FRAME = { local: 0, openai: 2833 * 0.15 / 1e6, anthropic: (720 * 1024 / 750) * 5.0 / 1e6 };
 const NAMES = { 'claude-code': 'Claude Code', codex: 'Codex', openai: 'OpenAI API', anthropic: 'Anthropic API', none: 'no summary', local: 'offline Whisper' };
 
 async function boot() {
@@ -167,6 +178,7 @@ async function boot() {
   $('ver').textContent = 'v' + st.version;
   state.summary = st.current.SHORTFORM_NOTES_SUMMARY_PROVIDER || 'claude-code';
   state.transcribe = st.current.SHORTFORM_NOTES_TRANSCRIBE_PROVIDER || '';
+  state.ocr = st.current.SHORTFORM_NOTES_OCR === '1' ? (st.current.SHORTFORM_NOTES_OCR_PROVIDER || 'local') : 'off';
   renderSummaryOpts(); renderDir();
   const hash = /^#step=(\d)$/.exec(location.hash);  // deep link, used for docs screenshots
   go(hash ? +hash[1] : st.config_exists ? 3 : 0);   // returning user: open the import page directly
@@ -227,6 +239,38 @@ function renderTranscribeOpts() {
     </label>`).join('');
   $('transcribeOpts').querySelectorAll('input').forEach(r => r.addEventListener('change', () => { state.transcribe = r.value; syncTranscribeUI(); }));
   syncTranscribeUI();
+  renderOcrOpts();
+}
+const OCR = [
+  { id: 'off', title: 'Off', desc: 'Caption and transcript only.' },
+  { id: 'local', title: 'On, read locally', desc: 'Free. Runs an OCR model on this computer. About 10 seconds of extra work for a 30 second video.' },
+  { id: 'openai', title: 'On, OpenAI vision', desc: 'gpt-4o-mini reads the frames. Needs an OpenAI API key.' },
+  { id: 'anthropic', title: 'On, Claude vision', desc: 'claude-opus-5 reads the frames. Needs an Anthropic API key. The most accurate and the most expensive option.' },
+];
+function renderOcrOpts() {
+  $('ocrOpts').innerHTML = OCR.map(c => `
+    <label class="opt ${c.id === state.ocr ? 'sel' : ''}" data-id="${c.id}">
+      <input type="radio" name="ocr" value="${c.id}" ${c.id === state.ocr ? 'checked' : ''}>
+      <span class="t">${c.title}</span>
+      <div class="d">${c.desc}</div>
+    </label>`).join('');
+  $('ocrOpts').querySelectorAll('input').forEach(r => r.addEventListener('change', () => { state.ocr = r.value; syncOcrUI(); }));
+  $('SHORTFORM_NOTES_OCR_FPS').value = st.current.SHORTFORM_NOTES_OCR_FPS || '1';
+  syncOcrUI();
+}
+function syncOcrUI() {
+  $('ocrOpts').querySelectorAll('.opt').forEach(o => o.classList.toggle('sel', o.dataset.id === state.ocr));
+  $('ocrFpsField').classList.toggle('hidden', state.ocr === 'off');
+  updateOcrEstimate();
+}
+function updateOcrEstimate() {
+  if (state.ocr === 'off') return;
+  const fps = parseFloat($('SHORTFORM_NOTES_OCR_FPS').value);
+  const rate = isNaN(fps) || fps < 0 ? 1 : fps;
+  const frames = (secs) => Math.ceil(secs * (rate === 0 ? 30 : rate));
+  const per = OCR_USD_PER_FRAME[state.ocr] || 0;
+  const line = (secs) => per === 0 ? `${frames(secs)} frames, free` : `${frames(secs)} frames, about $${(frames(secs) * per).toFixed(3)}`;
+  $('ocrEstimate').textContent = `Estimate before de-duplication: a 30 second video is ${line(30)}; a 60 second video is ${line(60)}.`;
 }
 function syncTranscribeUI() {
   $('transcribeOpts').querySelectorAll('.opt').forEach(o => o.classList.toggle('sel', o.dataset.id === state.transcribe));
@@ -248,6 +292,9 @@ async function saveAndGo() {
   const body = {
     SHORTFORM_NOTES_SUMMARY_PROVIDER: state.summary,
     SHORTFORM_NOTES_TRANSCRIBE_PROVIDER: state.transcribe,
+    SHORTFORM_NOTES_OCR: state.ocr === 'off' ? '' : '1',
+    SHORTFORM_NOTES_OCR_PROVIDER: state.ocr === 'off' ? '' : state.ocr,
+    SHORTFORM_NOTES_OCR_FPS: state.ocr === 'off' ? '' : $('SHORTFORM_NOTES_OCR_FPS').value.trim(),
     SHORTFORM_NOTES_DIR: $('SHORTFORM_NOTES_DIR').value.trim(),
     SHORTFORM_NOTES_AUDIENCE: $('SHORTFORM_NOTES_AUDIENCE').value.trim(),
     OPENAI_API_KEY: $('OPENAI_API_KEY').value.trim() || $('OPENAI_API_KEY_2').value.trim(),
@@ -278,7 +325,8 @@ function skillifyPrompt(kind) {
 }
 function renderDone() {
   const c = st.current, dir = c.SHORTFORM_NOTES_DIR || '~/shortform-notes';
-  $('summaryLine').textContent = `Summaries: ${NAMES[c.SHORTFORM_NOTES_SUMMARY_PROVIDER] || 'auto'}, transcripts: ${NAMES[c.SHORTFORM_NOTES_TRANSCRIBE_PROVIDER] || c.SHORTFORM_NOTES_TRANSCRIBE_PROVIDER || 'auto'}. Notes saved to ${dir.replace(st.home, '~')}.`;
+  const ocrPart = c.SHORTFORM_NOTES_OCR === '1' ? `, on-screen text: ${c.SHORTFORM_NOTES_OCR_PROVIDER || 'local'} at ${c.SHORTFORM_NOTES_OCR_FPS || '1'} frames/s` : '';
+  $('summaryLine').textContent = `Summaries: ${NAMES[c.SHORTFORM_NOTES_SUMMARY_PROVIDER] || 'auto'}, transcripts: ${NAMES[c.SHORTFORM_NOTES_TRANSCRIBE_PROVIDER] || c.SHORTFORM_NOTES_TRANSCRIBE_PROVIDER || 'auto'}${ocrPart}. Notes saved to ${dir.replace(st.home, '~')}.`;
   $('cfgPath').textContent = st.config_path.replace(st.home, '~');
   $('cmdCli').textContent = `cd "${st.repo_dir}"\n./start.sh https://www.instagram.com/reel/...`;
   const kind = c.SHORTFORM_NOTES_SUMMARY_PROVIDER;
@@ -319,6 +367,7 @@ function go(n) {
   window.scrollTo({ top: 0 });
 }
 $('tryUrl').addEventListener('keydown', e => { if (e.key === 'Enter') tryImport(); });
+$('SHORTFORM_NOTES_OCR_FPS').addEventListener('input', updateOcrEstimate);
 boot();
 </script>
 </body>

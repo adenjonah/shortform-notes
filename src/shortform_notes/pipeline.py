@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from shortform_notes import instagram, media, urls
+from shortform_notes import instagram, media, ocr, urls
 from shortform_notes.config import Settings, load_settings
 from shortform_notes.note import ReelContent, build_note, note_filename
 from shortform_notes.summarize import summarize
@@ -71,7 +71,9 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> ReelConte
             warnings.append("Could not resolve an Instagram shortcode from the link")
 
     try:
-        downloaded = await media.download_media(clean_url, tmpdir, download=settings.can_transcribe)
+        downloaded = await media.download_media(
+            clean_url, tmpdir, download=settings.can_transcribe or settings.ocr, video=settings.ocr
+        )
         warnings.extend(downloaded.warnings)
     except media.MediaFetchError as exc:
         warnings.append(f"yt-dlp could not fetch media: {exc}")
@@ -90,7 +92,23 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> ReelConte
             'Transcription skipped (set OPENAI_API_KEY, or pip install "shortform-notes[local]" for offline Whisper)'
         )
 
-    sources = tuple(s for s, present in (("caption", caption), ("transcript", transcript)) if present)
+    screen_text = None
+    if settings.ocr and downloaded and downloaded.video_path:
+        duration = (embed.duration if embed else None) or downloaded.duration or 0
+        est = ocr.estimate(duration, settings)
+        logger.info("OCR: %s", est.describe())
+        try:
+            screen_text, frames_read = await ocr.read_screen_text(downloaded.video_path, settings)
+            if not screen_text:
+                warnings.append(f"OCR read {frames_read} frames and found no on-screen text")
+        except Exception as exc:  # noqa: BLE001 (surface as a warning, keep the rest of the note)
+            warnings.append(f"OCR failed: {exc}")
+    elif settings.ocr:
+        warnings.append("OCR skipped: no video could be downloaded")
+
+    sources = tuple(
+        s for s, present in (("caption", caption), ("transcript", transcript), ("screen_text", screen_text)) if present
+    )
     if not sources:
         raise ReelImportError("; ".join(warnings) or "no caption or audio available")
 
@@ -102,6 +120,7 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> ReelConte
         platform=platform,
         caption=caption,
         transcript=transcript,
+        screen_text=screen_text,
         title=downloaded.title if downloaded else None,
         creator_handle=(embed.username if embed else None) or (downloaded.creator_handle if downloaded else None),
         creator_name=downloaded.creator_name if downloaded else None,
@@ -130,7 +149,9 @@ async def import_reel(url: str, settings: Settings | None = None, now: datetime 
 
     with tempfile.TemporaryDirectory(prefix="shortform-notes-") as tmpdir:
         content = await gather_content(clean, tmpdir, settings)
-    result = await summarize(content.caption, content.transcript, settings, title_hint=content.title)
+    result = await summarize(
+        content.caption, content.transcript, settings, title_hint=content.title, screen_text=content.screen_text
+    )
 
     settings.output_dir.mkdir(parents=True, exist_ok=True)
     path = _unique_path(

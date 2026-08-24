@@ -25,6 +25,7 @@ class MediaFetchError(Exception):
 @dataclass(frozen=True)
 class DownloadedMedia:
     audio_path: str | None
+    video_path: str | None
     caption: str | None
     creator_handle: str | None
     creator_name: str | None
@@ -36,12 +37,13 @@ class DownloadedMedia:
     warnings: tuple[str, ...] = field(default_factory=tuple)
 
 
-def _ytdlp_sync(url: str, tmpdir: str, download: bool) -> DownloadedMedia:
+def _ytdlp_sync(url: str, tmpdir: str, download: bool, video: bool = False) -> DownloadedMedia:
     import yt_dlp  # lazy: heavy import, and tests stub this function
 
     warnings: list[str] = []
     opts = {
-        "format": "bestaudio/best",
+        # A muxed mp4 when video is wanted (no ffmpeg merge step); otherwise the bare audio stream.
+        "format": "best[ext=mp4][height<=1080]/best" if video else "bestaudio/best",
         "outtmpl": f"{tmpdir}/%(id)s.%(ext)s",
         "noplaylist": True,
         "quiet": True,
@@ -53,12 +55,14 @@ def _ytdlp_sync(url: str, tmpdir: str, download: bool) -> DownloadedMedia:
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=download)
     downloads = info.get("requested_downloads") or []
-    audio_path = downloads[0].get("filepath") if downloads else None
-    if download and audio_path is None:
-        warnings.append("yt-dlp returned metadata but no downloadable audio stream")
+    path = downloads[0].get("filepath") if downloads else None
+    if download and path is None:
+        warnings.append("yt-dlp returned metadata but no downloadable stream")
+    audio_path, video_path = (path, path) if video else (path, None)
     title = info.get("title") or ""
     return DownloadedMedia(
         audio_path=audio_path,
+        video_path=video_path,
         caption=(info.get("description") or "").strip() or None,
         creator_handle=info.get("channel") or info.get("uploader_id"),
         creator_name=info.get("uploader") or info.get("channel"),
@@ -72,10 +76,10 @@ def _ytdlp_sync(url: str, tmpdir: str, download: bool) -> DownloadedMedia:
     )
 
 
-async def download_media(url: str, tmpdir: str, download: bool = True) -> DownloadedMedia:
-    """Run yt-dlp off the event loop. ``download=False`` fetches metadata only."""
+async def download_media(url: str, tmpdir: str, download: bool = True, video: bool = False) -> DownloadedMedia:
+    """Run yt-dlp off the event loop. ``download=False`` fetches metadata only; ``video`` keeps the picture."""
     try:
-        return await asyncio.to_thread(_ytdlp_sync, url, tmpdir, download)
+        return await asyncio.to_thread(_ytdlp_sync, url, tmpdir, download, video)
     except Exception as exc:  # yt-dlp raises DownloadError and friends
         message = str(exc).splitlines()[0][:300]
         logger.warning("yt-dlp failed for %s: %s", url, message)

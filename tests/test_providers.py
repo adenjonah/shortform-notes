@@ -24,6 +24,11 @@ def settings(**overrides) -> config.Settings:
         codex_model=None,
         whisper_model="base",
         audience="the reader",
+        ocr=False,
+        ocr_provider="local",
+        ocr_fps=1.0,
+        ocr_openai_model="gpt-4o-mini",
+        ocr_anthropic_model="claude-opus-5",
     )
     return config.Settings(**{**base, **overrides})
 

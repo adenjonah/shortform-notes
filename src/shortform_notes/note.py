@@ -16,6 +16,7 @@ class ReelContent:
     platform: str
     caption: str | None
     transcript: str | None
+    screen_text: str | None  # timestamped on-screen text from OCR, when enabled
     title: str | None  # platform-provided title (YouTube/TikTok); Instagram has none
     creator_handle: str | None
     creator_name: str | None
@@ -82,6 +83,8 @@ def build_note(
     body += [_blockquote(content.caption)] if content.caption else ["_No caption._"]
     body += ["", "## Transcript", ""]
     body += [content.transcript] if content.transcript else ["_No transcript._"]
+    if content.screen_text:
+        body += ["", "## On-screen text", "", content.screen_text]
     if content.warnings:
         body += ["", "## Import warnings", ""] + [f"- {w}" for w in content.warnings]
     body += ["", f"*Imported by shortform-notes on {imported_at.strftime('%Y-%m-%d %H:%M UTC')}*", ""]

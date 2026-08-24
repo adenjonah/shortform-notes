@@ -63,22 +63,25 @@ def build_prompt(audience: str) -> str:
         "title (max 8 words, no hashtags, no emoji), summary (2-4 sentences: what the video is "
         "about and its main point) and takeaways (3-6 concrete, specific bullets: exact "
         "quantities, steps, names, numbers when present).\n"
-        "Rules: never invent details that are not in the caption or transcript. If the video is "
+        "Rules: never invent details that are not in the caption, transcript, or on-screen text. If the video is "
         "a recipe, the takeaways must list every ingredient with amounts and the steps in order. "
         "Plain text only."
     )
 
 
-def _user_message(caption: str | None, transcript: str | None) -> str:
-    return f"Caption:\n{caption or '(none)'}\n\nTranscript:\n{transcript or '(none)'}"
+def _user_message(caption: str | None, transcript: str | None, screen_text: str | None = None) -> str:
+    msg = f"Caption:\n{caption or '(none)'}\n\nTranscript:\n{transcript or '(none)'}"
+    if screen_text:
+        msg += f"\n\nOn-screen text (OCR, with timestamps):\n{screen_text}"
+    return msg
 
 
-def _cli_prompt(caption: str | None, transcript: str | None, settings: Settings) -> str:
+def _cli_prompt(caption: str | None, transcript: str | None, settings: Settings, screen_text: str | None = None) -> str:
     """Single-string prompt for agent CLIs: instructions, schema and content, JSON-only reply."""
     return (
         f"{build_prompt(settings.audience)}\n\n"
         f"Reply with ONLY a JSON object matching this schema, no prose, no code fences:\n"
-        f"{json.dumps(SUMMARY_SCHEMA)}\n\n{_user_message(caption, transcript)}"
+        f"{json.dumps(SUMMARY_SCHEMA)}\n\n{_user_message(caption, transcript, screen_text)}"
     )
 
 
@@ -107,7 +110,9 @@ def _coerce(data: dict, fallback_title: str) -> Summary:
 # API backends
 
 
-async def _summarize_openai(caption: str | None, transcript: str | None, settings: Settings) -> dict:
+async def _summarize_openai(
+    caption: str | None, transcript: str | None, settings: Settings, screen_text: str | None = None
+) -> dict:
     from openai import AsyncOpenAI
 
     client = AsyncOpenAI(api_key=settings.openai_api_key)
@@ -115,7 +120,7 @@ async def _summarize_openai(caption: str | None, transcript: str | None, setting
         model=settings.openai_summary_model,
         messages=[
             {"role": "system", "content": build_prompt(settings.audience)},
-            {"role": "user", "content": _user_message(caption, transcript)},
+            {"role": "user", "content": _user_message(caption, transcript, screen_text)},
         ],
         response_format={
             "type": "json_schema",
@@ -127,7 +132,9 @@ async def _summarize_openai(caption: str | None, transcript: str | None, setting
     return json.loads(response.choices[0].message.content or "{}")
 
 
-async def _summarize_anthropic(caption: str | None, transcript: str | None, settings: Settings) -> dict:
+async def _summarize_anthropic(
+    caption: str | None, transcript: str | None, settings: Settings, screen_text: str | None = None
+) -> dict:
     from anthropic import AsyncAnthropic
 
     client = AsyncAnthropic(api_key=settings.anthropic_api_key)
@@ -135,7 +142,7 @@ async def _summarize_anthropic(caption: str | None, transcript: str | None, sett
         model=settings.anthropic_summary_model,
         max_tokens=2000,
         system=build_prompt(settings.audience),
-        messages=[{"role": "user", "content": _user_message(caption, transcript)}],
+        messages=[{"role": "user", "content": _user_message(caption, transcript, screen_text)}],
         output_config={"format": {"type": "json_schema", "schema": SUMMARY_SCHEMA}},
     )
     if response.stop_reason == "refusal":
@@ -184,8 +191,10 @@ def claude_code_argv(settings: Settings) -> list[str]:
     return argv
 
 
-async def _summarize_claude_code(caption: str | None, transcript: str | None, settings: Settings) -> dict:
-    raw = await _run_cli(claude_code_argv(settings), _cli_prompt(caption, transcript, settings))
+async def _summarize_claude_code(
+    caption: str | None, transcript: str | None, settings: Settings, screen_text: str | None = None
+) -> dict:
+    raw = await _run_cli(claude_code_argv(settings), _cli_prompt(caption, transcript, settings, screen_text))
     envelope = json.loads(raw)
     if envelope.get("is_error"):
         raise SummaryError(f"claude -p reported an error: {str(envelope.get('result'))[:200]}")
@@ -209,10 +218,14 @@ def codex_argv(settings: Settings, last_message_path: str) -> list[str]:
     return argv + ["-"]  # "-" = read the prompt from stdin
 
 
-async def _summarize_codex(caption: str | None, transcript: str | None, settings: Settings) -> dict:
+async def _summarize_codex(
+    caption: str | None, transcript: str | None, settings: Settings, screen_text: str | None = None
+) -> dict:
     with tempfile.TemporaryDirectory(prefix="shortform-notes-codex-") as tmpdir:
         last_message = Path(tmpdir) / "last.txt"
-        stdout = await _run_cli(codex_argv(settings, str(last_message)), _cli_prompt(caption, transcript, settings))
+        stdout = await _run_cli(
+            codex_argv(settings, str(last_message)), _cli_prompt(caption, transcript, settings, screen_text)
+        )
         text = last_message.read_text() if last_message.exists() else stdout
     return extract_json(text)
 
@@ -227,7 +240,11 @@ _BACKENDS = {
 
 
 async def summarize(
-    caption: str | None, transcript: str | None, settings: Settings, title_hint: str | None = None
+    caption: str | None,
+    transcript: str | None,
+    settings: Settings,
+    title_hint: str | None = None,
+    screen_text: str | None = None,
 ) -> Summary:
     """Return a Summary; degrades to a caption-derived title when the LLM step fails or is off."""
     fallback_title = (title_hint or caption or transcript or "Reel").split("\n")[0][:60]
@@ -236,7 +253,7 @@ async def summarize(
         return Summary(fallback_title, "", ())
     backend = globals()[backend_name]
     try:
-        data = await backend(caption, transcript, settings)
+        data = await backend(caption, transcript, settings, screen_text)
     except Exception as exc:  # noqa: BLE001 (summary is best-effort; the verbatim note is still written)
         logger.warning("summary failed (%s): %s", settings.summary_provider, exc)
         return Summary(fallback_title, "", ())

@@ -6,7 +6,7 @@ from shortform_notes.setup_cli import run_setup
 
 def test_wizard_defaults(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CONFIG_PATH", tmp_path / "config.env")
-    answers = iter(["", "", str(tmp_path / "notes"), ""])
+    answers = iter(["", "", "", str(tmp_path / "notes"), ""])
     path = run_setup(ask=lambda _prompt: next(answers), ask_secret=lambda _p: "unused")
     saved = config.read_config_file(path)
     assert saved["SHORTFORM_NOTES_SUMMARY_PROVIDER"] == "claude-code"
@@ -18,7 +18,7 @@ def test_wizard_defaults(tmp_path, monkeypatch):
 
 def test_wizard_openai_key_and_reprompt(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CONFIG_PATH", tmp_path / "config.env")
-    answers = iter(["9", "3", "1", str(tmp_path / "n"), "a home cook"])
+    answers = iter(["9", "3", "1", "2", str(tmp_path / "n"), "a home cook"])
     secrets = iter(["", "sk-test"])  # first empty answer is rejected
     path = run_setup(ask=lambda _p: next(answers), ask_secret=lambda _p: next(secrets))
     saved = config.read_config_file(path)
@@ -26,3 +26,4 @@ def test_wizard_openai_key_and_reprompt(tmp_path, monkeypatch):
     assert saved["OPENAI_API_KEY"] == "sk-test"
     assert saved["SHORTFORM_NOTES_TRANSCRIBE_PROVIDER"] == "openai"
     assert saved["SHORTFORM_NOTES_AUDIENCE"] == "a home cook"
+    assert saved["SHORTFORM_NOTES_OCR"] == "1" and saved["SHORTFORM_NOTES_OCR_PROVIDER"] == "local"

@@ -15,7 +15,7 @@ fi
 
 echo "Installing Python 3.12 and shortform-notes dependencies. The first run takes about a minute."
 uv python install 3.12 --quiet 2>/dev/null || true
-uv sync --python 3.12 --extra all --extra local --upgrade-package yt-dlp --quiet
+uv sync --python 3.12 --extra all --extra local --extra ocr --upgrade-package yt-dlp --quiet
 
 if [ "$#" -gt 0 ]; then
   exec uv run shortform-notes "$@"

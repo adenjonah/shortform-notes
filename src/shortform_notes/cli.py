@@ -9,7 +9,7 @@ import logging
 import sys
 
 from shortform_notes import __version__
-from shortform_notes.config import SUMMARY_PROVIDERS, TRANSCRIBE_PROVIDERS, load_settings
+from shortform_notes.config import OCR_PROVIDERS, SUMMARY_PROVIDERS, TRANSCRIBE_PROVIDERS, load_settings
 from shortform_notes.pipeline import ReelImportError, import_reel
 
 
@@ -43,6 +43,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="openai (API key), local (offline faster-whisper), or none (default: auto)",
     )
     parser.add_argument("--no-transcript", action="store_true", help="alias for --transcribe none")
+    parser.add_argument(
+        "--ocr",
+        action="store_true",
+        help="also read on-screen text from video frames (slower; costs money on API backends, free with local)",
+    )
+    parser.add_argument("--no-ocr", action="store_true", help="turn OCR off even if the config enables it")
+    parser.add_argument("--ocr-provider", choices=list(OCR_PROVIDERS), help="local (free), openai, or anthropic")
+    parser.add_argument(
+        "--ocr-fps", type=float, help="frames sampled per second for OCR; default 1, use 0 for every frame"
+    )
     parser.add_argument("--json", action="store_true", help="print machine-readable JSON instead of text")
     parser.add_argument("-v", "--verbose", action="store_true", help="show fetch/debug logs")
     parser.add_argument("--version", action="version", version=f"shortform-notes {__version__}")
@@ -68,7 +78,17 @@ async def _run(urls: list[str], args: argparse.Namespace) -> int:
         output_dir=args.out,
         summary_provider=args.summary,
         transcribe_provider="none" if args.no_transcript else args.transcribe,
+        ocr=False if args.no_ocr else (True if args.ocr else None),
+        ocr_provider=args.ocr_provider,
+        ocr_fps=args.ocr_fps,
     )
+    if settings.ocr and settings.ocr_provider != "local" and not args.json:
+        from shortform_notes.ocr import estimate
+
+        rate = f"{settings.ocr_fps:g} frames/s" if settings.ocr_fps else "every frame"
+        for secs in (30, 60):
+            note = estimate(secs, settings).describe()
+            print(f"OCR on ({settings.ocr_provider}, {rate}): a {secs}s video is {note}", file=sys.stderr)
     failures = 0
     for url in urls:
         try:

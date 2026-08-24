@@ -26,6 +26,10 @@ DEFAULT_ANTHROPIC_SUMMARY_MODEL = "claude-opus-5"
 DEFAULT_WHISPER_MODEL = "base"
 
 SUMMARY_PROVIDERS = ("openai", "anthropic", "claude-code", "codex", "none")
+OCR_PROVIDERS = ("local", "openai", "anthropic")
+DEFAULT_OCR_FPS = 1.0  # one frame per second; 0 means every frame
+DEFAULT_OCR_OPENAI_MODEL = "gpt-4o-mini"
+DEFAULT_OCR_ANTHROPIC_MODEL = "claude-opus-5"
 TRANSCRIBE_PROVIDERS = ("openai", "local", "none")
 _FALSE = {"0", "false", "no", "off"}
 
@@ -43,7 +47,12 @@ class Settings:
     claude_code_model: str | None  # None means the CLI's own default
     codex_model: str | None
     whisper_model: str
-    audience: str  # who the note is for; shapes the summary prompt
+    audience: str
+    ocr: bool  # read on-screen text from sampled video frames (costs more time, and money on API backends)
+    ocr_provider: str  # one of OCR_PROVIDERS
+    ocr_fps: float  # frames sampled per second; 0 = every frame
+    ocr_openai_model: str
+    ocr_anthropic_model: str  # who the note is for; shapes the summary prompt
 
     @property
     def can_transcribe(self) -> bool:
@@ -126,6 +135,9 @@ def load_settings(
     output_dir: str | None = None,
     summary_provider: str | None = None,
     transcribe_provider: str | None = None,
+    ocr: bool | None = None,
+    ocr_provider: str | None = None,
+    ocr_fps: float | None = None,
 ) -> Settings:
     """Build settings from env, with optional explicit overrides (CLI flags win)."""
     env = _env()
@@ -139,6 +151,12 @@ def load_settings(
         transcribe = "none"
     transcribe = detect_transcribe_provider(openai_key) if transcribe == "auto" else transcribe
 
+    ocr_on = (env.get("SHORTFORM_NOTES_OCR", "0").lower() not in _FALSE) if ocr is None else ocr
+    ocr_backend = ocr_provider or env.get("SHORTFORM_NOTES_OCR_PROVIDER") or "auto"
+    if ocr_backend == "auto":
+        ocr_backend = "openai" if openai_key and _has_module("openai") else "local"
+    fps_raw = env.get("SHORTFORM_NOTES_OCR_FPS", "")
+    fps = float(fps_raw) if ocr_fps is None and fps_raw else (DEFAULT_OCR_FPS if ocr_fps is None else ocr_fps)
     return Settings(
         output_dir=Path(output_dir or env.get("SHORTFORM_NOTES_DIR") or DEFAULT_OUTPUT_DIR).expanduser(),
         openai_api_key=openai_key,
@@ -152,4 +170,9 @@ def load_settings(
         codex_model=env.get("SHORTFORM_NOTES_CODEX_MODEL") or None,
         whisper_model=env.get("SHORTFORM_NOTES_WHISPER_MODEL", DEFAULT_WHISPER_MODEL),
         audience=env.get("SHORTFORM_NOTES_AUDIENCE", "the reader"),
+        ocr=ocr_on,
+        ocr_provider=_validate(ocr_backend, OCR_PROVIDERS, "OCR provider"),
+        ocr_fps=max(0.0, fps),
+        ocr_openai_model=env.get("SHORTFORM_NOTES_OCR_OPENAI_MODEL", DEFAULT_OCR_OPENAI_MODEL),
+        ocr_anthropic_model=env.get("SHORTFORM_NOTES_OCR_ANTHROPIC_MODEL", DEFAULT_OCR_ANTHROPIC_MODEL),
     )

@@ -42,7 +42,7 @@ Option 1 opens a local page at 127.0.0.1. Four steps, then a box to paste a link
 
 ![Step 1: where the summary runs](docs/screenshots/step-1.png)
 
-**Step 2. How audio is transcribed.** OpenAI (best quality, needs a key), offline Whisper (free, private, downloads a 75 MB model on first use), or skip.
+**Step 2. How audio is transcribed.** OpenAI (best quality, needs a key), offline Whisper (free, private, downloads a 75 MB model on first use), or skip. The same step has the optional on-screen text (OCR) switch, off by default, with a cost estimate that updates as you change the frame rate.
 
 ![Step 2: transcription](docs/screenshots/step-2.png)
 
@@ -94,6 +94,7 @@ Requires Python 3.10+. ffmpeg is not needed. Extras:
 | `openai` | API transcription + summaries | you have `OPENAI_API_KEY` |
 | `anthropic` | Claude API summaries | you have `ANTHROPIC_API_KEY` |
 | `local` | offline Whisper transcription (faster-whisper, ~75 MB model on first run) | you want transcripts without a key |
+| `ocr` | on-screen text from video frames (RapidOCR + OpenCV, no key) | the details are in text overlays, not speech |
 | `mcp` | MCP server for Claude Code / Claude Desktop | you want it as an editor tool |
 | `all` | `openai` + `anthropic` + `mcp` | |
 
@@ -140,6 +141,28 @@ shortform-notes --transcribe local <url>     # auto-detected once faster-whisper
 
 `SHORTFORM_NOTES_WHISPER_MODEL` picks the model size (`tiny`, `base`, `small`, `medium`, `large-v3`; default `base`). Combined with Option B, no API key is used at any step.
 
+### Option D: on-screen text (OCR), off by default
+
+Many recipe and tip videos put the details in text overlays rather than speech. OCR reads those. It is off by default because it downloads the whole video instead of just the audio, takes longer, and on a paid backend costs extra per frame.
+
+```bash
+shortform-notes --ocr <url>                              # local OCR, free
+shortform-notes --ocr --ocr-provider openai <url>        # gpt-4o-mini vision
+shortform-notes --ocr --ocr-fps 0 <url>                  # read every frame instead of one per second
+```
+
+How it works: frames are sampled at one per second (`--ocr-fps 1`, the default). `--ocr-fps 0` reads every frame, for fast-cut videos where text flashes for less than a second; `--ocr-fps 4` is a middle ground. Consecutive frames that look the same are dropped before any OCR call, so a video with a static overlay costs far less than the estimate. What is read goes into the note as a timestamped "On-screen text" section and into the summary prompt.
+
+Cost estimate, before de-duplication, using the vendors' published prices as of 2026-08-24:
+
+| Backend | Per frame | 30 s video at 1 frame/s | 60 s video at 1 frame/s | 30 s video, every frame |
+|---|---|---|---|---|
+| `local` (RapidOCR on your CPU) | free | free, about 10 s of compute | free | free, several minutes |
+| `openai` (gpt-4o-mini, low detail, 2,833 tokens per frame at $0.15 per 1M) | $0.0004 | $0.013 | $0.025 | $0.38 |
+| `anthropic` (claude-opus-5, about 980 tokens per frame at $5 per 1M) | $0.005 | $0.15 | $0.29 | $4.42 |
+
+The CLI prints the estimate for a 30 s and 60 s video before running a paid backend, and the setup page shows the same numbers next to the frame-rate field. Set `SHORTFORM_NOTES_OCR_ANTHROPIC_MODEL=claude-haiku-4-5` to cut the Claude figure by five. The `ocr` extra is installed by `start.sh`; for a manual install use `pip install "shortform-notes[ocr]"`.
+
 ### Configuration reference
 
 The setup page writes `~/.config/shortform-notes/config.env`; the CLI, MCP server and Claude Code skill all read it. Real environment variables override it, and flags override both:
@@ -153,6 +176,11 @@ The setup page writes `~/.config/shortform-notes/config.env`; the CLI, MCP serve
 | `SHORTFORM_NOTES_CLAUDE_CODE_MODEL` | | CLI default | Model for `claude -p` |
 | `SHORTFORM_NOTES_CODEX_MODEL` | | CLI default | Model for `codex exec` |
 | `SHORTFORM_NOTES_WHISPER_MODEL` | | `base` | faster-whisper model size |
+| `SHORTFORM_NOTES_OCR` | `--ocr` / `--no-ocr` | `0` | Read on-screen text from video frames |
+| `SHORTFORM_NOTES_OCR_PROVIDER` | `--ocr-provider` | `auto` | `local` (free), `openai`, `anthropic`; auto picks openai when a key is set, else local |
+| `SHORTFORM_NOTES_OCR_FPS` | `--ocr-fps` | `1` | Frames read per second; `0` reads every frame |
+| `SHORTFORM_NOTES_OCR_OPENAI_MODEL` | | `gpt-4o-mini` | OpenAI vision model for OCR |
+| `SHORTFORM_NOTES_OCR_ANTHROPIC_MODEL` | | `claude-opus-5` | Anthropic vision model for OCR |
 | `SHORTFORM_NOTES_OPENAI_MODEL` | | `gpt-4o-mini` | OpenAI summary model |
 | `SHORTFORM_NOTES_ANTHROPIC_MODEL` | | `claude-opus-5` | Anthropic summary model |
 
@@ -198,7 +226,13 @@ tags: [reel]
 
 ## Transcript
 verbatim transcript
+
+## On-screen text
+[00:03] 2 cups flour, 1 tsp salt
+[00:11] bake 425F 20 min
 ```
+
+The last section only appears when OCR is on.
 
 The `sources` field records which inputs actually produced the note, so a wrong summary can be traced to the input that produced it.
 
@@ -211,6 +245,7 @@ URL -> detect platform
                         |
                         v
               transcribe: OpenAI API  |  local faster-whisper  |  skip
+              OCR (optional): sample frames -> local RapidOCR | OpenAI vision | Claude vision
                         |
                         v
               summarize:  OpenAI API  |  Anthropic API  |  claude -p  |  codex exec  |  skip
@@ -247,7 +282,7 @@ print(result.path, result.takeaways)
 ## Limitations
 
 - Public posts only. Private accounts, age-gated and login-walled content cannot be fetched.
-- No OCR of on-screen text. Overlay-only recipes with no caption and no narration produce a thin note.
+- OCR is off by default; overlay-only recipes with no caption and no narration produce a thin note unless you turn it on.
 - Music-only clips download but transcribe to nothing; the note records this in its warnings.
 - Local Whisper (`base` on CPU) is weaker than the OpenAI backend on music-backed or non-English speech and returns an empty transcript rather than a guess. Try `SHORTFORM_NOTES_WHISPER_MODEL=small` or `medium`, or set `OPENAI_API_KEY`.
 - Instagram rate-limits datacenter IPs more aggressively than residential ones. Empty embeds on a server are usually this rate limit.

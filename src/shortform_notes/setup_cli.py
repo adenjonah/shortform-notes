@@ -20,6 +20,12 @@ SUMMARY_CHOICES = [
     ("anthropic", "Anthropic API key", "pay per use with Claude via the API"),
     ("none", "No summary", "save the caption, transcript and metadata only"),
 ]
+OCR_CHOICES = [
+    ("off", "Off", "caption and transcript only (default)"),
+    ("local", "On, local OCR", "free, runs on this computer; slower per reel"),
+    ("openai", "On, OpenAI vision", "about $0.013 per 30 s video at 1 frame per second"),
+    ("anthropic", "On, Claude vision", "about $0.18 per 30 s video at 1 frame per second with claude-opus-5"),
+]
 TRANSCRIBE_CHOICES = [
     ("openai", "OpenAI", "about $0.003 per minute of video; needs an OpenAI API key"),
     ("local", "Offline on this computer", "free and private; the first run downloads a 75 MB model"),
@@ -84,6 +90,19 @@ def run_setup(ask=input, ask_secret=getpass.getpass) -> Path:
         openai_key = _ask_secret("OpenAI API key", "", ask_secret)
     _say()
 
+    ocr_default = (
+        current.get("SHORTFORM_NOTES_OCR_PROVIDER", "off") if current.get("SHORTFORM_NOTES_OCR") == "1" else "off"
+    )
+    _say("Optional: read on-screen text from video frames. This downloads the full video and reads")
+    _say("one frame per second (change with SHORTFORM_NOTES_OCR_FPS; 0 means every frame, which costs")
+    _say("about 30 times more on a paid backend).")
+    ocr_choice = _pick("Read on-screen text?", OCR_CHOICES, ocr_default, ask)
+    if ocr_choice == "openai" and not openai_key:
+        openai_key = _ask_secret("OpenAI API key", "", ask_secret)
+    if ocr_choice == "anthropic" and not anthropic_key:
+        anthropic_key = _ask_secret("Anthropic API key", "", ask_secret)
+    _say()
+
     default_dir = current.get("SHORTFORM_NOTES_DIR") or str(Path.home() / "shortform-notes")
     folder = ask(f"3/4  Folder for notes [{default_dir}]: ").strip() or default_dir
     Path(folder).expanduser().mkdir(parents=True, exist_ok=True)
@@ -101,6 +120,8 @@ def run_setup(ask=input, ask_secret=getpass.getpass) -> Path:
             **current,
             "SHORTFORM_NOTES_SUMMARY_PROVIDER": summary,
             "SHORTFORM_NOTES_TRANSCRIBE_PROVIDER": transcribe,
+            "SHORTFORM_NOTES_OCR": "1" if ocr_choice != "off" else "",
+            "SHORTFORM_NOTES_OCR_PROVIDER": ocr_choice if ocr_choice != "off" else "",
             "SHORTFORM_NOTES_DIR": folder,
             "SHORTFORM_NOTES_AUDIENCE": audience,
             "OPENAI_API_KEY": openai_key,
