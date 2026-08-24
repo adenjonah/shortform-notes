@@ -1,12 +1,12 @@
-"""Orchestrator: URL → caption + transcript → summary → Markdown file on disk.
+"""Orchestrator: URL to caption and transcript, to summary, to a Markdown file on disk.
 
 Each source is independent and the note records which ones succeeded:
 
   1. caption    Instagram: captioned-embed payload (no key). TikTok/YouTube:
                 yt-dlp ``description``. Cheap and often the whole recipe.
-  2. transcript yt-dlp ``bestaudio`` → OpenAI transcription or local faster-whisper.
-  3. summary    one LLM call: OpenAI / Anthropic API, or your ``claude`` / ``codex``
-                CLI on the subscription you already have. Best-effort.
+  2. transcript yt-dlp ``bestaudio``, then OpenAI transcription or local faster-whisper.
+  3. summary    one LLM call: OpenAI / Anthropic API, or the ``claude`` / ``codex``
+                CLI using an existing subscription. Best-effort.
 
 Typical cost with everything on: about $0.004 per minute-long reel.
 """
@@ -53,7 +53,7 @@ class ReelImportResult:
 
 
 async def gather_content(url: str, tmpdir: str, settings: Settings) -> ReelContent:
-    """Collect caption + transcript from every source that works."""
+    """Collect caption and transcript from every source that works."""
     platform = urls.platform_for(url)
     clean_url = urls.strip_tracking(url)
     embed: instagram.InstagramEmbed | None = None
@@ -81,7 +81,7 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> ReelConte
     if downloaded and downloaded.audio_path and settings.can_transcribe:
         try:
             transcript = await transcribe(downloaded.audio_path, settings)
-        except Exception as exc:  # noqa: BLE001 — surface as a warning, keep the caption
+        except Exception as exc:  # noqa: BLE001 (surface as a warning, keep the caption)
             warnings.append(f"transcription failed: {exc}")
         if not transcript and "transcription failed" not in " ".join(warnings):
             warnings.append("Audio downloaded but transcription returned nothing")

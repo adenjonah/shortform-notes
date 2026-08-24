@@ -1,8 +1,8 @@
 """Speech-to-text. Two backends:
 
-* ``openai`` — ``gpt-4o-mini-transcribe`` (~$0.003 per minute of audio). Needs OPENAI_API_KEY.
-* ``local``  — faster-whisper on your own CPU. No key, no network after the one-time
-              model download (~75 MB for ``base``). Install with ``pip install "reelnotes[local]"``.
+* ``openai``: ``gpt-4o-mini-transcribe`` (about $0.003 per minute of audio). Needs OPENAI_API_KEY.
+* ``local``: faster-whisper on the local CPU. No key and no network after the one-time
+              model download (about 75 MB for ``base``). Install with ``pip install "reelnotes[local]"``.
 """
 
 from __future__ import annotations

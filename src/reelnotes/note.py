@@ -72,7 +72,7 @@ def build_note(
         "---",
     ]
     creator = f"@{content.creator_handle}" if content.creator_handle else (content.creator_name or "unknown creator")
-    body = [f"# {title}", "", f"**Source:** [{content.platform} · {creator}]({content.url})"]
+    body = [f"# {title}", "", f"**Source:** [{content.platform}, {creator}]({content.url})"]
     if content.thumbnail:
         body += ["", f"![thumbnail]({content.thumbnail})"]
     body += ["", "## Summary", "", summary or "_No summary generated._"]
@@ -84,5 +84,5 @@ def build_note(
     body += [content.transcript] if content.transcript else ["_No transcript._"]
     if content.warnings:
         body += ["", "## Import warnings", ""] + [f"- {w}" for w in content.warnings]
-    body += ["", f"*Imported by reelnotes — {imported_at.strftime('%Y-%m-%d %H:%M UTC')}*", ""]
+    body += ["", f"*Imported by reelnotes on {imported_at.strftime('%Y-%m-%d %H:%M UTC')}*", ""]
     return "\n".join(front + [""] + body)

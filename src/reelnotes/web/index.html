@@ -3,128 +3,138 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>reelnotes — setup</title>
+<title>reelnotes setup</title>
 <style>
   :root {
-    --bg: #0f1115; --panel: #171a21; --panel-2: #1e222b; --line: #2a2f3a;
-    --text: #e8eaf0; --muted: #9aa3b5; --accent: #7c9cff; --accent-2: #5ee3b0;
-    --warn: #ffb86b; --bad: #ff7a7a; --radius: 14px;
+    --bg: #fafaf9;
+    --surface: #ffffff;
+    --text: #1a1a1a;
+    --muted: #5c5c5c;
+    --line: #d9d9d9;
+    --line-strong: #8a8a8a;
+    --accent: #1f5f3f;
+    --accent-text: #ffffff;
+    --bad: #9b1c1c;
+    --warn: #7a4b00;
+    --radius: 4px;
+    --sp: 8px;
   }
-  @media (prefers-color-scheme: light) {
-    :root { --bg: #f6f7fa; --panel: #ffffff; --panel-2: #f0f2f7; --line: #dde1ea; --text: #16181d; --muted: #5d6675; --accent: #3b5bdb; --accent-2: #12996b; }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161616; --surface: #1e1e1e; --text: #e6e6e6; --muted: #a3a3a3;
+      --line: #3a3a3a; --line-strong: #7a7a7a; --accent: #6fbf8f; --accent-text: #0f1f16;
+      --bad: #e08484; --warn: #d9a860;
+    }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif; background: var(--bg); color: var(--text); }
-  .wrap { max-width: 760px; margin: 0 auto; padding: 40px 20px 80px; }
-  header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 28px; }
-  header h1 { margin: 0; font-size: 22px; letter-spacing: -0.01em; }
+  body { font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); margin: 0; text-align: left; }
+  .wrap { max-width: 680px; margin: 0 auto; padding: 32px 16px 64px; }
+  header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 24px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+  header h1 { font-size: 18px; font-weight: 600; margin: 0; }
   header .ver { color: var(--muted); font-size: 13px; }
-  .steps { display: flex; gap: 6px; margin: 0 0 28px; padding: 0; list-style: none; }
-  .steps li { flex: 1; height: 4px; border-radius: 4px; background: var(--line); }
-  .steps li.done { background: var(--accent-2); }
-  .steps li.now { background: var(--accent); }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 28px; }
-  h2 { margin: 0 0 6px; font-size: 24px; letter-spacing: -0.015em; }
-  h3 { margin: 22px 0 6px; font-size: 16px; }
-  .lead { color: var(--muted); margin: 0 0 22px; }
-  .opts { display: grid; gap: 10px; }
-  .opt { display: block; border: 1px solid var(--line); background: var(--panel-2); border-radius: 12px; padding: 14px 16px; cursor: pointer; transition: border-color .15s; }
-  .opt:hover { border-color: var(--accent); }
-  .opt.sel { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
-  .opt .t { display: flex; justify-content: space-between; align-items: center; font-weight: 600; }
-  .opt .d { color: var(--muted); font-size: 14px; margin-top: 3px; }
-  .opt input[type=radio] { display: none; }
-  .badge { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
-  .field { margin-top: 14px; }
-  .field label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
-  .field .hint { font-size: 13px; color: var(--muted); margin-top: 5px; }
-  input[type=text], input[type=password], input[type=url] { width: 100%; font: inherit; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
-  input:focus { outline: none; border-color: var(--accent); }
-  .row { display: flex; gap: 10px; align-items: center; }
+  .steps { list-style: none; margin: 0 0 16px; padding: 0; font-size: 13px; color: var(--muted); }
+  .steps li { display: none; }
+  .steps li.now { display: block; }
+  .card { background: transparent; border: 0; padding: 0; border-radius: 0; }
+  h2 { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
+  h3 { font-size: 15px; font-weight: 600; margin: 24px 0 8px; }
+  .lead { color: var(--text); margin: 0 0 16px; }
+  .opts { display: grid; gap: 8px; }
+  .opt { display: grid; grid-template-columns: 20px 1fr; column-gap: 8px; align-items: start; border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; cursor: pointer; background: var(--surface); }
+  .opt.sel { border-color: var(--line-strong); }
+  .opt input[type=radio] { margin: 3px 0 0; width: 14px; height: 14px; accent-color: var(--accent); grid-row: 1 / span 2; }
+  .opt .t { font-weight: 600; display: block; }
+  .opt .d { color: var(--muted); font-size: 14px; margin-top: 2px; grid-column: 2; }
+  .field { margin-top: 16px; }
+  .field label { display: block; font-size: 14px; color: var(--text); font-weight: 500; margin-bottom: 4px; }
+  .field .hint { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  input[type=text], input[type=password], input[type=url] { width: 100%; font: inherit; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--text); }
+  input:focus { outline: none; border-color: var(--line-strong); }
+  .row { display: flex; gap: 8px; align-items: center; }
   .row > * { flex: 1; }
-  .nav { display: flex; justify-content: space-between; gap: 10px; margin-top: 26px; }
-  button { font: inherit; font-weight: 600; padding: 11px 18px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); cursor: pointer; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  button:disabled { opacity: .5; cursor: not-allowed; }
-  button.small { padding: 6px 12px; font-size: 13px; font-weight: 500; }
-  .ghost { background: transparent; border-color: transparent; color: var(--muted); }
+  .nav { display: flex; justify-content: space-between; gap: 8px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); }
+  button { font: inherit; font-weight: 500; padding: 8px 16px; border-radius: var(--radius); border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.small { padding: 4px 8px; font-size: 13px; }
+  .ghost { background: var(--surface); border-color: var(--line-strong); color: var(--text); }
   code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
-  pre { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; overflow: auto; margin: 8px 0 0; white-space: pre-wrap; }
+  code { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 0 4px; }
+  pre { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 12px; margin: 8px 0 0; overflow: auto; white-space: pre-wrap; }
+  pre code { border: 0; padding: 0; background: transparent; }
   .pre-wrap { position: relative; }
-  .pre-wrap button { position: absolute; top: 14px; right: 8px; }
+  .pre-wrap button { position: absolute; top: 12px; right: 8px; }
   .how { display: grid; gap: 16px; margin-top: 8px; }
-  .how p { margin: 0; color: var(--muted); font-size: 14px; }
-  .result { margin-top: 16px; }
+  .how p { margin: 0; color: var(--text); font-size: 14px; }
+  .result { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 16px; }
   .result h3 { margin: 0 0 4px; }
-  .result ul { margin: 6px 0 0 18px; padding: 0; }
-  .msg { margin-top: 12px; font-size: 14px; }
+  .result ul { margin: 8px 0 0 16px; padding: 0; }
+  .msg { margin-top: 8px; font-size: 14px; }
   .msg.bad { color: var(--bad); }
   .msg.warn { color: var(--warn); }
-  .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--muted); border-top-color: transparent; border-radius: 50%; animation: s .8s linear infinite; vertical-align: -2px; margin-right: 6px; }
-  @keyframes s { to { transform: rotate(360deg); } }
-  details { margin-top: 12px; }
+  details { margin-top: 8px; }
   summary { cursor: pointer; color: var(--muted); font-size: 14px; }
-  a { color: var(--accent); }
+  a { color: var(--accent); text-decoration: underline; }
   .hidden { display: none !important; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header><h1>reelnotes</h1><span class="ver" id="ver"></span></header>
-  <ul class="steps" id="steps"><li></li><li></li><li></li><li></li></ul>
+  <ul class="steps" id="steps"><li>Step 1 of 4</li><li>Step 2 of 4</li><li>Step 3 of 4</li><li>Step 4 of 4</li></ul>
 
-  <!-- 0 · Method -->
+  <!-- Step 0: method -->
   <section class="card" data-step="0">
-    <h2>How do you want to run the AI?</h2>
-    <p class="lead">reelnotes turns an Instagram Reel, TikTok or YouTube Short into a Markdown note: caption, transcript, and the key takeaways. One model call per reel writes the summary. Pick where that call runs.</p>
+    <h2>Where should the summary run?</h2>
+    <p class="lead">reelnotes turns an Instagram Reel, TikTok, or YouTube Short into a Markdown note with the caption, transcript, and takeaways. One model call per reel writes the summary. Choose where that call runs.</p>
     <div class="opts" id="summaryOpts"></div>
 
     <div class="field hidden" id="openaiField">
       <label>OpenAI API key</label>
-      <input type="password" id="OPENAI_API_KEY" placeholder="sk-…" autocomplete="off">
-      <div class="hint">Saved to your local config file only (never sent anywhere but api.openai.com). Get one at platform.openai.com → API keys.</div>
+      <input type="password" id="OPENAI_API_KEY" placeholder="sk-..." autocomplete="off">
+      <div class="hint">Stored in the local config file and sent only to api.openai.com. Get one at platform.openai.com under API keys.</div>
     </div>
     <div class="field hidden" id="anthropicField">
       <label>Anthropic API key</label>
-      <input type="password" id="ANTHROPIC_API_KEY" placeholder="sk-ant-…" autocomplete="off">
-      <div class="hint">Saved to your local config file only. Get one at console.anthropic.com → API keys.</div>
+      <input type="password" id="ANTHROPIC_API_KEY" placeholder="sk-ant-..." autocomplete="off">
+      <div class="hint">Stored in the local config file. Get one at console.anthropic.com under API keys.</div>
     </div>
     <div class="field hidden" id="cliHint"><div class="hint" id="cliHintText"></div></div>
     <div class="msg bad hidden" id="step0Err"></div>
-    <div class="nav"><span></span><button class="primary" onclick="next0()">Next →</button></div>
+    <div class="nav"><span></span><button class="primary" onclick="next0()">Next</button></div>
   </section>
 
-  <!-- 1 · Transcripts -->
+  <!-- Step 1: transcripts -->
   <section class="card hidden" data-step="1">
-    <h2>How should the audio be transcribed?</h2>
-    <p class="lead">The transcript is what makes spoken-only reels useful. It's optional; caption-only notes still work.</p>
+    <h2>How should audio be transcribed?</h2>
+    <p class="lead">The transcript is what makes spoken-only reels useful. It is optional. Caption-only notes still work.</p>
     <div class="opts" id="transcribeOpts"></div>
     <div class="field hidden" id="openaiField2">
       <label>OpenAI API key</label>
-      <input type="password" id="OPENAI_API_KEY_2" placeholder="sk-…" autocomplete="off">
-      <div class="hint">Transcription runs on OpenAI's audio model. Saved locally only.</div>
+      <input type="password" id="OPENAI_API_KEY_2" placeholder="sk-..." autocomplete="off">
+      <div class="hint">Transcription runs on OpenAI's audio model. The key is stored in the local config file.</div>
     </div>
     <div class="msg bad hidden" id="step1Err"></div>
-    <div class="nav"><button class="ghost" onclick="go(0)">← Back</button><button class="primary" onclick="next1()">Next →</button></div>
+    <div class="nav"><button class="ghost" onclick="go(0)">Back</button><button class="primary" onclick="next1()">Next</button></div>
   </section>
 
-  <!-- 2 · Save location -->
+  <!-- Step 2: save location -->
   <section class="card hidden" data-step="2">
-    <h2>Where should notes go?</h2>
-    <p class="lead">One <code>.md</code> file per reel, named <code>&lt;date&gt;-&lt;creator&gt;-&lt;title&gt;.md</code>. Any folder works; if you use Obsidian, paste a folder inside your vault.</p>
-    <div class="field"><label>Folder</label><input type="text" id="REELNOTES_DIR"><div class="hint">Created if it doesn't exist.</div></div>
-    <div class="field"><label>Who are the notes for? <span style="opacity:.7">(optional — shapes the summary, e.g. "a home cook who saves recipes")</span></label><input type="text" id="REELNOTES_AUDIENCE" placeholder="the reader"></div>
+    <h2>Where should notes be saved?</h2>
+    <p class="lead">One <code>.md</code> file per reel, named <code>&lt;date&gt;-&lt;creator&gt;-&lt;title&gt;.md</code>. Any folder works. For Obsidian, use a folder inside the vault.</p>
+    <div class="field"><label>Folder</label><input type="text" id="REELNOTES_DIR"><div class="hint">Created if it does not exist.</div></div>
+    <div class="field"><label>Who the notes are for</label><input type="text" id="REELNOTES_AUDIENCE" placeholder="the reader"><div class="hint">Optional. Shapes the summary, for example "a home cook who saves recipes".</div></div>
     <div class="msg bad hidden" id="saveErr"></div>
-    <div class="nav"><button class="ghost" onclick="go(1)">← Back</button><button class="primary" id="saveBtn" onclick="saveAndGo()">Save & finish →</button></div>
+    <div class="nav"><button class="ghost" onclick="go(1)">Back</button><button class="primary" id="saveBtn" onclick="saveAndGo()">Save and finish</button></div>
   </section>
 
-  <!-- 3 · Done: try + how + skillify -->
+  <!-- Step 3: done (import, later use, skill setup) -->
   <section class="card hidden" data-step="3">
-    <h2>You're set. Try one.</h2>
+    <h2>Setup is saved. Import a reel to test it.</h2>
     <p class="lead" id="summaryLine"></p>
     <div class="msg warn hidden" id="cliWarn"></div>
     <div class="row">
-      <input type="url" id="tryUrl" placeholder="https://www.instagram.com/reel/…  ·  tiktok.com/…  ·  youtube.com/shorts/…">
+      <input type="url" id="tryUrl" placeholder="https://www.instagram.com/reel/... or a TikTok or YouTube Shorts URL">
       <button class="primary" id="tryBtn" onclick="tryImport()" style="flex:0 0 auto">Import</button>
     </div>
     <div class="msg" id="tryMsg"></div>
@@ -136,12 +146,12 @@
       <div class="pre-wrap"><pre id="skillifyPrompt"></pre><button class="small" onclick="copyText('skillifyPrompt', this)">Copy</button></div>
     </div>
 
-    <h3>Using it from now on</h3>
+    <h3>Using it later</h3>
     <div class="how">
-      <div><strong>This page.</strong><p>Run <code>./start.sh</code> in the reelnotes folder any time and paste a link above. Your choices live in <code id="cfgPath"></code> — edit it or come back here to change them.</p></div>
-      <div><strong>Terminal.</strong><p>Import without the browser:</p><div class="pre-wrap"><pre id="cmdCli"></pre><button class="small" onclick="copyText('cmdCli', this)">Copy</button></div></div>
+      <div><strong>This page</strong><p>Run <code>./start.sh</code> in the reelnotes folder and paste a link above. Settings are stored in <code id="cfgPath"></code>. Edit that file or return here to change them.</p></div>
+      <div><strong>Terminal</strong><p>Import from the terminal:</p><div class="pre-wrap"><pre id="cmdCli"></pre><button class="small" onclick="copyText('cmdCli', this)">Copy</button></div></div>
     </div>
-    <div class="nav"><button class="ghost" onclick="go(2)">← Change settings</button><button onclick="openFolder()">Open notes folder</button></div>
+    <div class="nav"><button class="ghost" onclick="go(2)">Change settings</button><button onclick="openFolder()">Open notes folder</button></div>
   </section>
 </div>
 
@@ -157,26 +167,26 @@ async function boot() {
   state.summary = st.current.REELNOTES_SUMMARY_PROVIDER || 'claude-code';
   state.transcribe = st.current.REELNOTES_TRANSCRIBE_PROVIDER || '';
   renderSummaryOpts(); renderDir();
-  go(st.config_exists ? 3 : 0);   // returning user → straight to the import page
+  go(st.config_exists ? 3 : 0);   // returning user: open the import page directly
 }
 
-// ── step 0: method ────────────────────────────────────────────────────
+// step 0: method
 const SUMMARY = [
-  { id: 'claude-code', title: 'Claude Code', desc: 'Already have Claude Code? Summaries run through your Claude subscription. One `claude -p` call per reel, tools off, nothing saved to a session.' },
-  { id: 'codex', title: 'Codex CLI', desc: 'Already have OpenAI\'s Codex CLI? Summaries run through your ChatGPT subscription in a read-only sandbox.' },
-  { id: 'openai', title: 'OpenAI API key', desc: 'Pay per use: about $0.001 per reel for the summary. Also unlocks the best transcription.' },
-  { id: 'anthropic', title: 'Anthropic API key', desc: 'Pay per use with Claude via the API.' },
-  { id: 'none', title: 'No AI summary', desc: 'Just save the caption, transcript and metadata. No accounts needed.' },
+  { id: 'claude-code', title: 'Claude Code', desc: 'Uses your Claude subscription through the installed Claude Code CLI. One claude -p call per reel with tools off. No API key needed.' },
+  { id: 'codex', title: 'Codex CLI', desc: 'Uses your ChatGPT subscription through the installed Codex CLI, in a read-only sandbox. No API key needed.' },
+  { id: 'openai', title: 'OpenAI API key', desc: 'Pay per use, about $0.001 per reel for the summary. This key also enables OpenAI transcription in the next step.' },
+  { id: 'anthropic', title: 'Anthropic API key', desc: 'Pay per use through the Anthropic API.' },
+  { id: 'none', title: 'No AI summary', desc: 'Saves the caption, transcript, and metadata only. No account needed.' },
 ];
 const CLI_HINT = {
-  'claude-code': 'Nothing to paste. If `claude` isn\'t installed yet: <a href="https://claude.com/claude-code" target="_blank">claude.com/claude-code</a>, then run <code>claude</code> once to log in.',
-  'codex': 'Nothing to paste. If `codex` isn\'t installed yet: <code>npm i -g @openai/codex</code>, then run <code>codex</code> once to log in.',
+  'claude-code': 'Nothing to paste. If claude is not installed, see <a href="https://claude.com/claude-code" target="_blank">claude.com/claude-code</a>, then run <code>claude</code> once to log in.',
+  'codex': 'Nothing to paste. If codex is not installed, run <code>npm i -g @openai/codex</code>, then run <code>codex</code> once to log in.',
 };
 function renderSummaryOpts() {
   $('summaryOpts').innerHTML = SUMMARY.map(c => `
     <label class="opt ${c.id === state.summary ? 'sel' : ''}" data-id="${c.id}">
       <input type="radio" name="summary" value="${c.id}" ${c.id === state.summary ? 'checked' : ''}>
-      <div class="t"><span>${c.title}</span>${c.id === 'claude-code' || c.id === 'codex' ? '<span class="badge">no API key</span>' : ''}</div>
+      <div class="t">${c.title}</div>
       <div class="d">${c.desc}</div>
     </label>`).join('');
   $('summaryOpts').querySelectorAll('input').forEach(r => r.addEventListener('change', () => { state.summary = r.value; syncSummaryUI(); }));
@@ -193,24 +203,24 @@ function syncSummaryUI() {
 }
 function openaiKey() { return $('OPENAI_API_KEY').value.trim() || $('OPENAI_API_KEY_2').value.trim() || (st.has_openai_key ? '(saved)' : ''); }
 function next0() {
-  if (state.summary === 'openai' && !openaiKey()) return err('step0Err', 'Paste your OpenAI API key to continue, or pick another option.');
-  if (state.summary === 'anthropic' && !$('ANTHROPIC_API_KEY').value.trim() && !st.has_anthropic_key) return err('step0Err', 'Paste your Anthropic API key to continue, or pick another option.');
+  if (state.summary === 'openai' && !openaiKey()) return err('step0Err', 'Enter an OpenAI API key to continue, or choose another option.');
+  if (state.summary === 'anthropic' && !$('ANTHROPIC_API_KEY').value.trim() && !st.has_anthropic_key) return err('step0Err', 'Enter an Anthropic API key to continue, or choose another option.');
   go(1);
 }
 
-// ── step 1: transcripts ───────────────────────────────────────────────
+// step 1: transcripts
 function renderTranscribeOpts() {
   const hasKey = !!openaiKey();
   if (!state.transcribe) state.transcribe = hasKey ? 'openai' : 'local';
   const choices = [
-    { id: 'openai', title: 'OpenAI (best quality)', desc: 'gpt-4o-mini-transcribe, about $0.003 per minute of video. Handles music and other languages well.' + (hasKey ? '' : ' Needs an OpenAI API key.') },
-    { id: 'local', title: 'Offline on this computer', desc: 'Whisper runs locally: free and private, nothing leaves your machine. First run downloads a ~75 MB model. Weaker on music-heavy or non-English audio.' },
-    { id: 'none', title: 'Skip transcripts', desc: 'Caption and metadata only. Fastest, and no audio is downloaded.' },
+    { id: 'openai', title: 'OpenAI API', desc: 'gpt-4o-mini-transcribe, about $0.003 per minute of video. Handles music and non-English speech well.' + (hasKey ? '' : ' Needs an OpenAI API key.') },
+    { id: 'local', title: 'Offline Whisper on this computer', desc: 'Runs locally, no data leaves the machine, no API key needed. First run downloads a model of about 75 MB. Less accurate on music-heavy or non-English audio.' },
+    { id: 'none', title: 'No transcript', desc: 'Caption and metadata only. No audio is downloaded.' },
   ];
   $('transcribeOpts').innerHTML = choices.map(c => `
     <label class="opt ${c.id === state.transcribe ? 'sel' : ''}" data-id="${c.id}">
       <input type="radio" name="transcribe" value="${c.id}" ${c.id === state.transcribe ? 'checked' : ''}>
-      <div class="t"><span>${c.title}</span>${c.id === 'local' ? '<span class="badge">no API key</span>' : ''}</div>
+      <div class="t">${c.title}</div>
       <div class="d">${c.desc}</div>
     </label>`).join('');
   $('transcribeOpts').querySelectorAll('input').forEach(r => r.addEventListener('change', () => { state.transcribe = r.value; syncTranscribeUI(); }));
@@ -222,11 +232,11 @@ function syncTranscribeUI() {
   $('step1Err').classList.add('hidden');
 }
 function next1() {
-  if (state.transcribe === 'openai' && !openaiKey()) return err('step1Err', 'Paste an OpenAI API key, or choose offline / skip.');
+  if (state.transcribe === 'openai' && !openaiKey()) return err('step1Err', 'Paste an OpenAI API key, or choose offline or no transcript.');
   go(2);
 }
 
-// ── step 2: folder + save ─────────────────────────────────────────────
+// step 2: folder + save
 function renderDir() {
   $('REELNOTES_DIR').value = st.current.REELNOTES_DIR || (st.home + '/reelnotes');
   $('REELNOTES_AUDIENCE').value = st.current.REELNOTES_AUDIENCE || '';
@@ -246,35 +256,35 @@ async function saveAndGo() {
   if (!r.ok) return err('saveErr', data.error);
   st = data.detect;
   $('cliWarn').classList.toggle('hidden', !data.warning);
-  if (data.warning) $('cliWarn').textContent = '! ' + data.warning;
+  if (data.warning) $('cliWarn').textContent = data.warning;
   go(3);
 }
 
-// ── step 3: try + how + skillify ──────────────────────────────────────
+// step 3: import, later use, skill setup
 function skillifyPrompt(kind) {
   const repo = st.repo_dir;
   const mcp = kind === 'claude-code'
     ? `claude mcp add reelnotes -- uv run --directory "${repo}" reelnotes mcp`
     : `codex mcp add reelnotes -- uv run --directory "${repo}" reelnotes mcp`;
-  return `Set up the reelnotes tool for me. It lives at ${repo} and is already configured (config in ${st.config_path}).
+  return `Set up the reelnotes tool. It is installed at ${repo} and configured in ${st.config_path}.
 
 1. Register it as an MCP server so you get an import_reel_note(url) tool:
    ${mcp}
 2. Make "/reel <url>" work in this project: copy ${repo}/.claude/skills/reel into this project's .claude/skills/ (create the folder if needed).${kind === 'codex' ? ' Also add a line to AGENTS.md: "When I paste an Instagram/TikTok/YouTube Shorts link, run: uv run --directory ' + repo + ' reelnotes <url> --json and report the takeaways."' : ''}
 3. Verify by running: uv run --directory "${repo}" reelnotes --version
-4. From now on, whenever I paste an Instagram Reel, TikTok or YouTube Shorts link, import it with that tool and reply with the note path and the takeaways.`;
+4. From now on, when I paste an Instagram Reel, TikTok, or YouTube Shorts link, import it with that tool and reply with the note path and the takeaways.`;
 }
 function renderDone() {
   const c = st.current, dir = c.REELNOTES_DIR || '~/reelnotes';
-  $('summaryLine').textContent = `Summaries: ${NAMES[c.REELNOTES_SUMMARY_PROVIDER] || 'auto'} · Transcripts: ${NAMES[c.REELNOTES_TRANSCRIBE_PROVIDER] || c.REELNOTES_TRANSCRIBE_PROVIDER || 'auto'} · Notes → ${dir.replace(st.home, '~')}`;
+  $('summaryLine').textContent = `Summaries: ${NAMES[c.REELNOTES_SUMMARY_PROVIDER] || 'auto'}, transcripts: ${NAMES[c.REELNOTES_TRANSCRIBE_PROVIDER] || c.REELNOTES_TRANSCRIBE_PROVIDER || 'auto'}. Notes saved to ${dir.replace(st.home, '~')}.`;
   $('cfgPath').textContent = st.config_path.replace(st.home, '~');
-  $('cmdCli').textContent = `cd "${st.repo_dir}"\n./start.sh https://www.instagram.com/reel/…`;
+  $('cmdCli').textContent = `cd "${st.repo_dir}"\n./start.sh https://www.instagram.com/reel/...`;
   const kind = c.REELNOTES_SUMMARY_PROVIDER;
   const show = kind === 'claude-code' || kind === 'codex';
   $('skillify').classList.toggle('hidden', !show);
   if (show) {
-    $('skillifyTitle').textContent = `Make it a ${NAMES[kind]} skill`;
-    $('skillifyLead').textContent = `Paste this into ${NAMES[kind]} once. After that you can drop a reel link into any ${NAMES[kind]} session and it will import it for you.`;
+    $('skillifyTitle').textContent = `Use it from ${NAMES[kind]}`;
+    $('skillifyLead').textContent = `Paste this prompt into ${NAMES[kind]} once. After that, pasting a reel link in any ${NAMES[kind]} session imports it.`;
     $('skillifyPrompt').textContent = skillifyPrompt(kind);
   }
 }
@@ -282,15 +292,15 @@ async function tryImport() {
   const url = $('tryUrl').value.trim(); if (!url) return;
   const btn = $('tryBtn'); btn.disabled = true;
   $('tryResult').classList.add('hidden');
-  $('tryMsg').className = 'msg'; $('tryMsg').innerHTML = '<span class="spin"></span>Fetching, transcribing, summarizing… (10–60 s; the first offline transcript also downloads the model)';
+  $('tryMsg').className = 'msg'; $('tryMsg').textContent = 'Working... Fetching, transcribing and summarizing takes 10 to 60 seconds. The first offline transcript also downloads the model.';
   try {
     const r = await fetch('/api/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
     const d = await r.json();
-    if (!r.ok) { $('tryMsg').className = 'msg bad'; $('tryMsg').textContent = '✗ ' + d.error; return; }
-    $('tryMsg').className = 'msg'; $('tryMsg').textContent = `✓ Saved ${d.path.replace(st.home, '~')}  (sources: ${d.sources.join(', ')})`;
-    $('tryResult').innerHTML = `<h3>${esc(d.title)}</h3>${d.summary ? `<p>${esc(d.summary)}</p>` : ''}${d.takeaways.length ? '<ul>' + d.takeaways.map(t => `<li>${esc(t)}</li>`).join('') + '</ul>' : ''}${d.warnings.length ? `<div class="msg warn">${d.warnings.map(w => '! ' + esc(w)).join('<br>')}</div>` : ''}<details><summary>Show the note file</summary><pre>${esc(d.note)}</pre></details>`;
+    if (!r.ok) { $('tryMsg').className = 'msg bad'; $('tryMsg').textContent = d.error; return; }
+    $('tryMsg').className = 'msg'; $('tryMsg').textContent = `Saved ${d.path.replace(st.home, '~')} (sources: ${d.sources.join(', ')})`;
+    $('tryResult').innerHTML = `<h3>${esc(d.title)}</h3>${d.summary ? `<p>${esc(d.summary)}</p>` : ''}${d.takeaways.length ? '<ul>' + d.takeaways.map(t => `<li>${esc(t)}</li>`).join('') + '</ul>' : ''}${d.warnings.length ? `<div class="msg warn">${d.warnings.map(w => 'Warning: ' + esc(w)).join('<br>')}</div>` : ''}<details><summary>Show the note file</summary><pre>${esc(d.note)}</pre></details>`;
     $('tryResult').classList.remove('hidden');
-  } catch (e) { $('tryMsg').className = 'msg bad'; $('tryMsg').textContent = '✗ ' + e; }
+  } catch (e) { $('tryMsg').className = 'msg bad'; $('tryMsg').textContent = 'Error: ' + e; }
   finally { btn.disabled = false; }
 }
 async function openFolder() { await fetch('/api/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: st.current.REELNOTES_DIR || $('REELNOTES_DIR').value }) }); }
@@ -298,7 +308,7 @@ function copyText(id, btn) { navigator.clipboard.writeText($(id).textContent).th
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 function err(id, text) { $(id).textContent = text; $(id).classList.remove('hidden'); }
 
-// ── nav ───────────────────────────────────────────────────────────────
+// nav
 function go(n) {
   if (n === 1) renderTranscribeOpts();
   if (n === 3) renderDone();

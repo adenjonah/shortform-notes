@@ -1,10 +1,10 @@
-"""Instagram caption fetch via the public captioned-embed page — no login, no API key.
+"""Instagram caption fetch via the public captioned-embed page. No login, no API key.
 
 ``https://www.instagram.com/p/<shortcode>/embed/captioned/`` server-renders a
 ``contextJSON`` payload (caption, owner, CDN video URL, duration) **only** when
 the request carries ``Sec-Fetch-Mode: navigate``. Without that header you get a
 ~600 KB JavaScript shell and an HTTP 200 that means nothing. Invalid shortcodes
-also return 200 — always check the payload, never the status code.
+also return 200, so always check the payload, never the status code.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ _CONTEXT_JSON_RE = re.compile(r'"contextJSON":"((?:[^"\\]|\\.)*)"')
 _CAPTION_DIV_RE = re.compile(r'<div class="Caption">(.*?)</div>\s*</div>', re.S)
 _TAG_RE = re.compile(r"<[^>]+>")
 
-# A real desktop UA plus the navigate hint — the combination Instagram renders for.
+# A real desktop UA plus the navigate hint, the combination Instagram renders for.
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -49,7 +49,7 @@ class InstagramEmbed:
 
 
 async def resolve_shortcode(url: str) -> str | None:
-    """Return the shortcode, following ``/share/…`` redirects if needed."""
+    """Return the shortcode, following ``/share/<token>`` redirects if needed."""
     direct = _SHORTCODE_RE.search(url)
     if direct:
         return direct.group(1)

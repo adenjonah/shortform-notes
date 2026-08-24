@@ -1,4 +1,4 @@
-"""``reelnotes <url> [<url> ...]`` — the command-line entry point."""
+"""``reelnotes <url> [<url> ...]``: the command-line entry point."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="reelnotes",
         description="Turn Instagram Reels, TikToks and YouTube Shorts into Markdown notes.",
         epilog=(
-            "No API key? If `claude` (Claude Code) or `codex` is on your PATH, summaries run through it. "
+            "Without an API key, summaries run through `claude` (Claude Code) or `codex` if either is on your PATH. "
             "Env: OPENAI_API_KEY, ANTHROPIC_API_KEY, REELNOTES_DIR, REELNOTES_SUMMARY_PROVIDER, "
             "REELNOTES_TRANSCRIBE_PROVIDER, REELNOTES_AUDIENCE. See .env.example."
         ),
@@ -32,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--summary",
         choices=[*SUMMARY_PROVIDERS, "auto"],
-        help="who writes the summary: an API key, your claude/codex CLI, or none (default: auto)",
+        help="summary backend: openai, anthropic, claude-code, codex, or none (default: auto)",
     )
     parser.add_argument(
         "--transcribe",
@@ -50,14 +50,14 @@ def _print_result(result, as_json: bool) -> None:
     if as_json:
         print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
         return
-    print(f"✓ {result.path}  (sources: {', '.join(result.sources)})")
+    print(f"saved {result.path}  (sources: {', '.join(result.sources)})")
     print(f"  {result.title}")
     if result.summary:
         print(f"  {result.summary}")
     for t in result.takeaways:
-        print(f"  • {t}")
+        print(f"  - {t}")
     for w in result.warnings:
-        print(f"  ! {w}")
+        print(f"  warning: {w}")
 
 
 async def _run(urls: list[str], args: argparse.Namespace) -> int:
@@ -75,7 +75,7 @@ async def _run(urls: list[str], args: argparse.Namespace) -> int:
             if args.json:
                 print(json.dumps({"url": url, "error": str(exc)}))
             else:
-                print(f"✗ {url}\n  {exc}", file=sys.stderr)
+                print(f"failed {url}\n  {exc}", file=sys.stderr)
     return 1 if failures else 0
 
 
@@ -85,12 +85,12 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(
         level=logging.INFO if args.verbose else logging.WARNING, format="%(levelname)s %(name)s: %(message)s"
     )
-    if args.urls and args.urls[0] == "web":  # `reelnotes web [port]` → local onboarding + import UI
+    if args.urls and args.urls[0] == "web":  # `reelnotes web [port]`: local setup and import UI
         from reelnotes.web.server import serve
 
         serve(port=int(args.urls[1]) if len(args.urls) > 1 else None, open_browser=not args.json)
         return 0
-    if args.urls == ["mcp"]:  # `reelnotes mcp` → stdio MCP server for Claude Code / Claude Desktop
+    if args.urls == ["mcp"]:  # `reelnotes mcp`: stdio MCP server for Claude Code / Claude Desktop
         from reelnotes.mcp_server import run_server
 
         run_server()

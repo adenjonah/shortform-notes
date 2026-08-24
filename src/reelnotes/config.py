@@ -4,9 +4,9 @@ Everything is optional. reelnotes picks the best available backend for each
 LLM step, so it works with:
 
 * an API key           OPENAI_API_KEY and/or ANTHROPIC_API_KEY
-* a coding-agent CLI   ``claude`` (Claude Code) or ``codex`` on PATH — summaries
-                       run on the subscription you already pay for, no key needed
-* nothing at all       caption + metadata note; add ``[local]`` for an offline
+* a coding-agent CLI   ``claude`` (Claude Code) or ``codex`` on PATH; summaries
+                       run on that CLI's subscription, no key needed
+* nothing at all       caption and metadata note; add ``[local]`` for an offline
                        Whisper transcript
 """
 
@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_OUTPUT_DIR = "reels"
-# Written by the onboarding UI (`reelnotes web`); real environment variables always win over it.
+# Written by the setup UI (`reelnotes web`); real environment variables always win over it.
 CONFIG_PATH = Path(os.environ.get("REELNOTES_CONFIG") or "~/.config/reelnotes/config.env").expanduser()
 DEFAULT_OPENAI_TRANSCRIBE_MODEL = "gpt-4o-mini-transcribe"
 DEFAULT_OPENAI_SUMMARY_MODEL = "gpt-4o-mini"
@@ -40,7 +40,7 @@ class Settings:
     openai_transcribe_model: str
     openai_summary_model: str
     anthropic_summary_model: str
-    claude_code_model: str | None  # None → the CLI's own default
+    claude_code_model: str | None  # None means the CLI's own default
     codex_model: str | None
     whisper_model: str
     audience: str  # who the note is for; shapes the summary prompt
@@ -85,7 +85,7 @@ def detect_transcribe_provider(openai_key: str | None) -> str:
 
 
 def read_config_file(path: Path | None = None) -> dict[str, str]:
-    """Parse a KEY=VALUE file (comments and blank lines ignored). Missing file → {}."""
+    """Parse a KEY=VALUE file (comments and blank lines ignored). A missing file yields {}."""
     path = path or CONFIG_PATH  # resolved at call time so tests (and REELNOTES_CONFIG) can redirect it
     if not path.exists():
         return {}
@@ -103,7 +103,7 @@ def write_config_file(values: dict[str, str], path: Path | None = None) -> Path:
     """Write KEY=VALUE pairs (empty values dropped), owner-readable only since it may hold API keys."""
     path = path or CONFIG_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    lines = ["# reelnotes configuration — written by `reelnotes web`; edit freely.", ""]
+    lines = ["# reelnotes configuration, written by `reelnotes web`. Edit freely.", ""]
     lines += [f"{k}={v}" for k, v in sorted(values.items()) if v]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     path.chmod(0o600)

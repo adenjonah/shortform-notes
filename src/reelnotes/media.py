@@ -2,7 +2,7 @@
 
 ``bestaudio/best`` and no ffmpeg: Instagram and YouTube expose a standalone
 audio stream, TikTok falls through to the muxed mp4, and transcription APIs
-accept both. Never set a custom User-Agent — yt-dlp pairs its UA with the rest
+accept both. Never set a custom User-Agent; yt-dlp pairs its UA with the rest
 of the browser fingerprint and Instagram rejects mismatches.
 """
 
@@ -62,7 +62,7 @@ def _ytdlp_sync(url: str, tmpdir: str, download: bool) -> DownloadedMedia:
         caption=(info.get("description") or "").strip() or None,
         creator_handle=info.get("channel") or info.get("uploader_id"),
         creator_name=info.get("uploader") or info.get("channel"),
-        # yt-dlp synthesises "Video by <user>" for Instagram — not real content.
+        # yt-dlp synthesises "Video by <user>" for Instagram, not real content.
         title=None if title.startswith("Video by ") else (title or None),
         timestamp=info.get("timestamp"),
         duration=info.get("duration"),

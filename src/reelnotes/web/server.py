@@ -1,6 +1,6 @@
-"""Local onboarding + import UI: ``reelnotes web``.
+"""Local setup and import UI: ``reelnotes web``.
 
-Zero extra dependencies — stdlib ``http.server`` bound to 127.0.0.1 only, serving
+No extra dependencies: stdlib ``http.server`` bound to 127.0.0.1 only, serving
 one HTML page and a few JSON endpoints. It writes the same config file the CLI,
 MCP server and Claude Code skill read, so choices made here apply everywhere.
 """
@@ -40,7 +40,7 @@ SAVABLE_KEYS = (
 )
 
 
-# ── state (no machine scanning: only our own config file + package facts) ──
+# state (no machine scanning: only our own config file and package facts)
 
 
 def describe() -> dict:
@@ -63,11 +63,11 @@ def cli_warning(provider: str) -> str | None:
     """Only after the user picked a CLI backend: a PATH lookup for that one binary."""
     binary = {"claude-code": "claude", "codex": "codex"}.get(provider)
     if binary and not shutil.which(binary):
-        return f"`{binary}` isn't on your PATH yet. Install it, then imports will work."
+        return f"`{binary}` is not on your PATH. Install it before importing."
     return None
 
 
-# ── HTTP handler ───────────────────────────────────────────────────────
+# HTTP handler
 
 
 def _load_index() -> bytes:
@@ -97,7 +97,7 @@ class Handler(BaseHTTPRequestHandler):
             return {}
         return data if isinstance(data, dict) else {}
 
-    def do_GET(self) -> None:  # noqa: N802 — http.server API
+    def do_GET(self) -> None:  # noqa: N802 (http.server API)
         if self.path in ("/", "/index.html"):
             body = _load_index()
             self.send_response(200)
@@ -151,7 +151,7 @@ class Handler(BaseHTTPRequestHandler):
         except ReelImportError as exc:
             self._json(422, {"error": str(exc)})
             return
-        except Exception as exc:  # noqa: BLE001 — surface to the page, keep the server alive
+        except Exception as exc:  # noqa: BLE001 (surface to the page, keep the server alive)
             logger.exception("import crashed for %s", url)
             self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
             return
@@ -172,11 +172,11 @@ class Handler(BaseHTTPRequestHandler):
         self._json(200, {"opened": str(target)})
 
 
-# ── entry point ────────────────────────────────────────────────────────
+# entry point
 
 
 def _bind(preferred: int, attempts: int = 20) -> ThreadingHTTPServer:
-    """Bind the preferred port, else walk upward — a busy port must never block a first-time user."""
+    """Bind the preferred port, else try the next ones, so a busy port does not block a first run."""
     for port in range(preferred, preferred + attempts):
         try:
             return ThreadingHTTPServer((HOST, port), Handler)
@@ -190,12 +190,12 @@ def serve(port: int | None = None, open_browser: bool = True) -> None:
     server = _bind(port or int(os.environ.get("REELNOTES_PORT") or DEFAULT_PORT))
     port = server.server_address[1]
     url = f"http://{HOST}:{port}/"
-    print(f"reelnotes {__version__} — setup & import UI at {url}  (Ctrl+C to stop)", flush=True)
+    print(f"reelnotes {__version__}: setup and import UI at {url}  (Ctrl+C to stop)", flush=True)
     if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nbye")
+        print("\nstopped")
     finally:
         server.server_close()

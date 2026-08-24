@@ -1,15 +1,15 @@
-"""One LLM call over caption + transcript → title, summary, takeaways.
+"""One LLM call over caption and transcript, returning title, summary and takeaways.
 
 Backends (all produce the same JSON shape):
 
 * ``openai``      Chat Completions with a strict JSON schema.
 * ``anthropic``   Messages API with ``output_config`` JSON schema.
-* ``claude-code`` shells out to ``claude -p`` — uses your Claude subscription, no API key.
-* ``codex``       shells out to ``codex exec`` — uses your ChatGPT subscription, no API key.
+* ``claude-code`` shells out to ``claude -p`` (Claude subscription, no API key).
+* ``codex``       shells out to ``codex exec`` (ChatGPT subscription, no API key).
 
 The CLI backends run one-shot with all tools disabled and read-only sandboxes;
-they see only the prompt, never your files. Summaries are best-effort: on any
-failure the note still ships with the verbatim caption and transcript.
+they receive only the prompt. Summaries are best-effort: on any failure the
+note is still written with the verbatim caption and transcript.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ SUMMARY_SCHEMA = {
         "takeaways": {
             "type": "array",
             "items": {"type": "string"},
-            "description": "3-6 concrete, specific takeaways — exact quantities, steps, names, numbers when present",
+            "description": "3-6 concrete, specific takeaways: exact quantities, steps, names, numbers when present",
         },
     },
     "required": ["title", "summary", "takeaways"],
@@ -61,7 +61,7 @@ def build_prompt(audience: str) -> str:
         f"You are turning a short social-media video into a personal note for {audience}. "
         "You are given the video's caption and/or spoken transcript. Return JSON with keys "
         "title (max 8 words, no hashtags, no emoji), summary (2-4 sentences: what the video is "
-        "about and its main point) and takeaways (3-6 concrete, specific bullets — exact "
+        "about and its main point) and takeaways (3-6 concrete, specific bullets: exact "
         "quantities, steps, names, numbers when present).\n"
         "Rules: never invent details that are not in the caption or transcript. If the video is "
         "a recipe, the takeaways must list every ingredient with amounts and the steps in order. "
@@ -74,7 +74,7 @@ def _user_message(caption: str | None, transcript: str | None) -> str:
 
 
 def _cli_prompt(caption: str | None, transcript: str | None, settings: Settings) -> str:
-    """Single-string prompt for agent CLIs: instructions + schema + content, JSON-only reply."""
+    """Single-string prompt for agent CLIs: instructions, schema and content, JSON-only reply."""
     return (
         f"{build_prompt(settings.audience)}\n\n"
         f"Reply with ONLY a JSON object matching this schema, no prose, no code fences:\n"
@@ -83,7 +83,7 @@ def _cli_prompt(caption: str | None, transcript: str | None, settings: Settings)
 
 
 def extract_json(text: str) -> dict:
-    """Lenient parse for CLI output: strips code fences, then takes the outermost ``{…}``."""
+    """Lenient parse for CLI output: strips code fences, then takes the outermost ``{...}``."""
     cleaned = re.sub(r"^\s*```(?:json)?\s*|\s*```\s*$", "", text.strip(), flags=re.I)
     try:
         return json.loads(cleaned)
@@ -104,7 +104,7 @@ def _coerce(data: dict, fallback_title: str) -> Summary:
     )
 
 
-# ── API backends ───────────────────────────────────────────────────────
+# API backends
 
 
 async def _summarize_openai(caption: str | None, transcript: str | None, settings: Settings) -> dict:
@@ -144,7 +144,7 @@ async def _summarize_anthropic(caption: str | None, transcript: str | None, sett
     return json.loads(text or "{}")
 
 
-# ── Coding-agent CLI backends ──────────────────────────────────────────
+# Coding-agent CLI backends
 
 
 async def _run_cli(argv: list[str], stdin_text: str) -> str:
@@ -237,7 +237,7 @@ async def summarize(
     backend = globals()[backend_name]
     try:
         data = await backend(caption, transcript, settings)
-    except Exception as exc:  # noqa: BLE001 — summary is best-effort; verbatim note still ships
+    except Exception as exc:  # noqa: BLE001 (summary is best-effort; the verbatim note is still written)
         logger.warning("summary failed (%s): %s", settings.summary_provider, exc)
         return Summary(fallback_title, "", ())
     return _coerce(data, fallback_title)

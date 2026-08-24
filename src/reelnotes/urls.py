@@ -35,6 +35,6 @@ def platform_for(url: str) -> str:
 
 
 def strip_tracking(url: str) -> str:
-    """Drop query/fragment (``?igsh=…``, ``?si=…``) so the same video dedups."""
+    """Drop query/fragment (``?igsh=``, ``?si=``) so the same video dedups."""
     parsed = urlparse(url)
     return parsed._replace(query="", fragment="").geturl()

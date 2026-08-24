@@ -1,4 +1,4 @@
-"""reelnotes — turn short-form video links into Markdown notes."""
+"""reelnotes: turn short-form video links into Markdown notes."""
 
 from reelnotes.pipeline import ReelImportError, ReelImportResult, import_reel
 

@@ -12,7 +12,7 @@ from reelnotes.pipeline import ReelImportError, import_reel
 
 
 def build_server():
-    # Lazy: optional dependency. mcp 2.x renamed FastMCP → MCPServer; support both.
+    # Lazy: optional dependency. mcp 2.x renamed FastMCP to MCPServer; support both.
     try:
         from mcp.server.mcpserver import MCPServer as _Server
     except ImportError:  # mcp 1.x
@@ -26,7 +26,7 @@ def build_server():
 
         Fetches the caption, transcribes the audio (if OPENAI_API_KEY is set), writes
         <REELNOTES_DIR>/<date>-<creator>-<slug>.md and returns the title, summary,
-        takeaways and note path as JSON. Call it as soon as the user shares such a link.
+        takeaways and note path as JSON. Call it when the user shares such a link.
         """
         try:
             result = await import_reel(url, load_settings())

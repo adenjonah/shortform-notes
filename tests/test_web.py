@@ -1,4 +1,4 @@
-"""The local setup server: state, config save, and CLI warning — no network, no scanning."""
+"""The local setup server: state, config save, and CLI warning (no network, no scanning)."""
 
 import json
 import threading
@@ -29,7 +29,7 @@ def _json(conn, method, path, body=None):
 def test_index_and_state(client):
     client.request("GET", "/")
     resp = client.getresponse()
-    assert resp.status == 200 and b"How do you want to run the AI?" in resp.read()
+    assert resp.status == 200 and b"Where should the summary run?" in resp.read()
     status, state = _json(client, "GET", "/api/state")
     assert status == 200
     assert state["config_exists"] is False
@@ -50,7 +50,7 @@ def test_save_config_writes_file_and_creates_dir(client, tmp_path, monkeypatch):
     saved = config.read_config_file(config.CONFIG_PATH)
     assert saved["REELNOTES_SUMMARY_PROVIDER"] == "claude-code" and saved["OPENAI_API_KEY"] == "sk-secret"
     assert data["detect"]["has_openai_key"] is True and "OPENAI_API_KEY" not in json.dumps(data["detect"])
-    assert "claude" in data["warning"]  # CLI chosen but not on PATH → warning, not a hard error
+    assert "claude" in data["warning"]  # CLI chosen but not on PATH: warning, not a hard error
 
 
 def test_import_rejects_bad_url(client):
