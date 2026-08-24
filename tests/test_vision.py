@@ -5,6 +5,7 @@ clients record their payload, and the CLI backends are patched at ``summarize._r
 """
 
 import json
+import re
 import sys
 import types
 from contextlib import contextmanager
@@ -50,6 +51,7 @@ def settings(tmp_path, **over) -> config.Settings:
         ocr_openai_model="gpt-5-mini",
         ocr_anthropic_model="claude-sonnet-5",
         vision=True,
+        vision_agentic=False,
         fps_explicit=False,
     )
     return config.Settings(**{**base, **over})
@@ -285,6 +287,108 @@ async def test_codex_without_vision_passes_no_images(tmp_path):
     assert result.title == "T"
 
 
+# ── agentic vision ─────────────────────────────────────────────────────
+
+
+def test_frame_filenames_are_timestamps():
+    assert summarize.frame_filename(0) == "00-00.png"
+    assert summarize.frame_filename(3) == "00-03.png"
+    assert summarize.frame_filename(75) == "01-15.png"
+
+
+def test_oneshot_argv_still_disables_every_tool(tmp_path):
+    argv = summarize.claude_code_argv(settings(tmp_path, summary_provider="claude-code"), images=True)
+    assert argv[argv.index("--tools") + 1] == ""
+    assert "--add-dir" not in argv and "--allowed-tools" not in argv
+
+
+def test_agentic_argv_allows_only_read_in_only_the_frames_dir(tmp_path):
+    argv = summarize.claude_code_argv(
+        settings(tmp_path, summary_provider="claude-code"), images=True, frames_dir="/tmp/f/frames"
+    )
+    assert argv[argv.index("--tools") + 1] == "Read"  # the available set, not just the permitted one
+    assert argv[argv.index("--allowed-tools") + 1] == "Read"  # so -p never stalls on a prompt
+    assert argv[argv.index("--add-dir") + 1] == "/tmp/f/frames"
+    assert "--no-session-persistence" in argv and "--disable-slash-commands" in argv
+    joined = " ".join(argv)
+    for forbidden in ("Bash", "Write", "Edit", "WebFetch", "WebSearch", "--dangerously-skip-permissions"):
+        assert forbidden not in joined
+
+
+async def test_agentic_claude_code_writes_frames_and_names_them_in_the_prompt(tmp_path):
+    seen = {}
+
+    async def fake_run(argv, stdin):
+        directory = Path(argv[argv.index("--add-dir") + 1])
+        seen["dir"] = directory
+        seen["files"] = sorted(p.name for p in directory.iterdir())
+        seen["png"] = (directory / "00-00.png").read_bytes()[:8]
+        seen["prompt"] = json.loads(stdin)["message"]["content"][0]["text"]
+        return stream_json_output()
+
+    with patch.object(summarize, "_run_cli", fake_run):
+        result = await summarize.summarize(
+            "cap", None, settings(tmp_path, summary_provider="claude-code", vision_agentic=True), frames=frames(3)
+        )
+    assert result.title == "T"
+    assert seen["files"] == ["00-00.png", "00-01.png", "00-02.png"]
+    assert seen["png"] == b"\x89PNG\r\n\x1a\n"  # the real frame, not a placeholder
+    assert str(seen["dir"]) in seen["prompt"] and "00-01.png" in seen["prompt"]
+    assert "Open any frame you need" in seen["prompt"]
+    assert not seen["dir"].exists()  # torn down with the call, like the downloaded media
+
+
+async def test_oneshot_claude_code_writes_no_frames_dir(tmp_path):
+    with patch.object(summarize, "_run_cli", AsyncMock(return_value=stream_json_output())) as run:
+        await summarize.summarize(
+            "cap", None, settings(tmp_path, summary_provider="claude-code"), frames=frames(3)
+        )
+    argv, stdin = run.await_args.args
+    assert "--add-dir" not in argv
+    assert "full-resolution originals" not in json.loads(stdin)["message"]["content"][0]["text"]
+
+
+async def test_agentic_codex_puts_the_frames_dir_in_the_prompt(tmp_path):
+    seen = {}
+
+    async def fake_run(argv, prompt):
+        seen["prompt"] = prompt
+        directory = Path(re.search(r"originals are in (\S+),", prompt).group(1))
+        seen["dir"] = directory
+        seen["files"] = sorted(p.name for p in directory.iterdir())
+        assert "--sandbox" in argv and argv[argv.index("--sandbox") + 1] == "read-only"
+        Path(argv[argv.index("--output-last-message") + 1]).write_text(REPLY_JSON)
+        return ""
+
+    with patch.object(summarize, "_run_cli", fake_run):
+        result = await summarize.summarize(
+            "cap", None, settings(tmp_path, summary_provider="codex", vision_agentic=True), frames=frames(3)
+        )
+    assert result.title == "T"
+    assert seen["files"] == ["00-00.png", "00-01.png", "00-02.png"]
+    assert not seen["dir"].exists()
+
+
+def test_agentic_needs_an_agent_backend(tmp_path):
+    for provider in ("claude-code", "codex"):
+        assert settings(tmp_path, summary_provider=provider, vision_agentic=True).vision_is_agentic is True
+    for provider in ("openai", "anthropic", "none"):
+        assert settings(tmp_path, summary_provider=provider, vision_agentic=True).vision_is_agentic is False
+    # asking for agentic never turns vision on by itself
+    assert settings(tmp_path, vision=False, vision_agentic=True).vision_is_agentic is False
+
+
+async def test_agentic_on_an_api_backend_runs_oneshot_and_warns(tmp_path):
+    """The frames still reach the model as sheets; only the second look is unavailable."""
+    sent = {}
+    with stub_openai(sent):
+        result = await summarize.summarize(
+            "cap", None, settings(tmp_path, summary_provider="openai", vision_agentic=True), frames=frames(3)
+        )
+    assert result.title == "T"
+    assert any(part["type"] == "image_url" for part in sent["messages"][1]["content"])
+
+
 # ── the cap ────────────────────────────────────────────────────────────
 
 
@@ -493,6 +597,19 @@ async def test_vision_skipped_when_no_video_downloaded(tmp_path):
     assert any("Vision skipped: no video" in w for w in result.warnings)
 
 
+async def test_agentic_on_an_api_backend_warns_in_the_note(tmp_path):
+    with (
+        patch.object(media, "download_media", AsyncMock(return_value=video())),
+        patch.object(ocr, "sample_frames", AsyncMock(return_value=frames(3))),
+        patch("shortform_notes.summarize._summarize_openai", AsyncMock(return_value=REPLY)),
+    ):
+        result = await import_reel(
+            "https://www.tiktok.com/@c/video/1", settings(tmp_path, summary_provider="openai", vision_agentic=True)
+        )
+    assert any("Agentic vision needs an agent backend" in w for w in result.warnings)
+    assert "video" in result.sources  # it still saw the sheets, so vision itself was not skipped
+
+
 # ── flag, env and config precedence ────────────────────────────────────
 
 
@@ -539,3 +656,20 @@ def test_cli_flags_reach_settings(tmp_path, monkeypatch):
         assert run.await_args.args[1].vision is True
         main(["https://youtu.be/x", "--no-vision", "--summary", "openai", "-o", str(tmp_path)])
         assert run.await_args.args[1].vision is False
+        # `--vision agentic` turns on both; plain `--vision` leaves the mode off.
+        main(["https://youtu.be/x", "--vision", "agentic", "--summary", "codex", "-o", str(tmp_path)])
+        settings_used = run.await_args.args[1]
+        assert settings_used.vision is True and settings_used.vision_agentic is True
+        main(["https://youtu.be/x", "--vision", "--summary", "codex", "-o", str(tmp_path)])
+        assert run.await_args.args[1].vision_agentic is False
+
+
+def test_vision_env_takes_agentic_as_well_as_a_boolean(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "CONFIG_PATH", tmp_path / "none.env")
+    monkeypatch.setenv("SHORTFORM_NOTES_VISION", "agentic")
+    loaded = _load()
+    assert loaded.vision is True and loaded.vision_agentic is True
+    monkeypatch.setenv("SHORTFORM_NOTES_VISION", "1")
+    assert _load().vision is True and _load().vision_agentic is False
+    monkeypatch.setenv("SHORTFORM_NOTES_VISION", "0")
+    assert _load().vision is False and _load().vision_agentic is False

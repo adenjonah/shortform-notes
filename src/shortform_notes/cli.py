@@ -62,11 +62,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--vision",
-        action="store_true",
+        nargs="?",
+        const="on",
+        choices=("on", "agentic"),
         help=(
             "show the summary model the video: sampled frames are tiled into timestamped contact sheets "
             f"and sent with the summary call (any backend but 'none'; at most {MAX_VISION_FRAMES} frames "
-            f"per video, {FRAMES_PER_GRID} to a sheet)"
+            f"per video, {FRAMES_PER_GRID} to a sheet). `--vision agentic` additionally lets the "
+            "claude-code and codex backends open the full-resolution frames themselves; slower, but it "
+            "can read fine print and check a fast cut the sheets blur"
         ),
     )
     parser.add_argument("--no-vision", action="store_true", help="turn vision off even if the config enables it")
@@ -101,6 +105,7 @@ async def _run(urls: list[str], args: argparse.Namespace) -> int:
         ocr_provider=args.ocr_provider,
         ocr_fps=args.ocr_fps,
         vision=False if args.no_vision else (True if args.vision else None),
+        vision_agentic=False if args.no_vision else (True if args.vision == "agentic" else None),
     )
     rate = f"{settings.ocr_fps:g} frames/s" if settings.ocr_fps else "every frame"
     if settings.ocr and settings.ocr_provider != "local" and not args.json:

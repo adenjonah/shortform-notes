@@ -36,6 +36,7 @@ def settings(tmp_path: Path, openai: bool = False, anthropic: bool = False, prov
         ocr_openai_model="gpt-5-mini",
         ocr_anthropic_model="claude-sonnet-5",
         vision=False,
+        vision_agentic=False,
         fps_explicit=False,
     )
 

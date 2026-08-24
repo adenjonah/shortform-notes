@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from shortform_notes import instagram, media, ocr, urls
-from shortform_notes.config import Settings, load_settings
+from shortform_notes.config import AGENTIC_VISION_PROVIDERS, Settings, load_settings
 from shortform_notes.note import ReelContent, Scene, build_note, note_filename
 from shortform_notes.summarize import summarize, vision_estimate
 from shortform_notes.transcribe import transcribe
@@ -71,6 +71,11 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> tuple[Ree
     want_frames = settings.ocr or settings.can_see_video
     if settings.vision and not settings.can_see_video:
         warnings.append("Vision skipped: no summary backend is configured, so nothing would see the frames")
+    if settings.vision_agentic and settings.can_see_video and not settings.vision_is_agentic:
+        warnings.append(
+            f"Agentic vision needs an agent backend that can open the frames "
+            f"({', '.join(AGENTIC_VISION_PROVIDERS)}); {settings.summary_provider} ran one-shot instead"
+        )
 
     if platform == "instagram":
         shortcode = await instagram.resolve_shortcode(url)

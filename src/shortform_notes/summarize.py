@@ -8,8 +8,11 @@ Backends (all produce the same JSON shape):
 * ``codex``       shells out to ``codex exec`` (ChatGPT subscription, no API key).
 
 The CLI backends run one-shot with all tools disabled and read-only sandboxes;
-they receive only the prompt. Summaries are best-effort: on any failure the
-note is still written with the verbatim caption and transcript.
+they receive only the prompt. Under ``--vision agentic`` they instead get the
+sampled frames on disk and read-only access to that one directory, so the agent
+can open an original when a contact-sheet cell is too small to settle a
+question. Summaries are best-effort: on any failure the note is still written
+with the verbatim caption and transcript.
 
 With ``--vision`` every backend also sees the video. Frames sampled by ``ocr``
 are tiled into timestamped contact sheets and sent as images: the APIs take
@@ -197,6 +200,40 @@ def _cli_prompt(
     )
 
 
+# ── agentic vision ─────────────────────────────────────────────────────
+#
+# One-shot vision hands an agent backend a frozen view: the contact sheets, and nothing else it
+# can act on. Agentic vision instead writes the frames it sampled to a directory and tells the
+# agent where they are, so it can open the ones the sheets left ambiguous. The sheets still go
+# in the request — they are the cheap overview — the directory is only for a second look.
+
+
+def frame_filename(seconds: float) -> str:
+    """``00-03.png``: the cell's timestamp, with the colon swapped for a filesystem-safe dash."""
+    return f"{ocr.timestamp(seconds).replace(':', '-')}.png"
+
+
+def write_frames(frames: Sequence[ocr.Frame], parent: Path) -> Path:
+    """The sampled frames as timestamp-named PNGs, at the resolution they were sampled at."""
+    directory = parent / "frames"
+    directory.mkdir(parents=True, exist_ok=True)
+    for frame in frames:
+        (directory / frame_filename(frame.seconds)).write_bytes(frame.png)
+    return directory
+
+
+def agentic_instructions(directory: Path, frames: Sequence[ocr.Frame]) -> str:
+    """Tell the agent the directory and what is in it. Without the inventory it guesses filenames."""
+    inventory = ", ".join(frame_filename(frame.seconds) for frame in frames)
+    return (
+        f"\n\nThe contact sheets give you the overview. The full-resolution originals are in "
+        f"{directory}, named by timestamp: {inventory}. Open any frame you need to read text, "
+        f"identify people or objects, or examine a moment more closely before writing your scenes. "
+        f"You can only read those files — everything else is off, and you still reply with the "
+        f"JSON object and nothing else."
+    )
+
+
 def extract_json(text: str) -> dict:
     """Lenient parse for CLI output: strips code fences, then takes the outermost ``{...}``."""
     cleaned = re.sub(r"^\s*```(?:json)?\s*|\s*```\s*$", "", text.strip(), flags=re.I)
@@ -255,6 +292,7 @@ async def _summarize_openai(
     settings: Settings,
     screen_text: str | None = None,
     grids: Sequence[ocr.Grid] = (),
+    frames: Sequence[ocr.Frame] = (),  # unused: an API call gets one frozen look at the sheets
 ) -> dict:
     from openai import AsyncOpenAI
 
@@ -294,6 +332,7 @@ async def _summarize_anthropic(
     settings: Settings,
     screen_text: str | None = None,
     grids: Sequence[ocr.Grid] = (),
+    frames: Sequence[ocr.Frame] = (),  # unused: an API call gets one frozen look at the sheets
 ) -> dict:
     from anthropic import AsyncAnthropic
 
@@ -339,17 +378,26 @@ async def _run_cli(argv: list[str], stdin_text: str) -> str:
     return out.decode(errors="replace")
 
 
-def claude_code_argv(settings: Settings, images: bool = False) -> list[str]:
-    """``claude -p`` one-shot: JSON envelope, every tool disabled, nothing persisted.
+def claude_code_argv(settings: Settings, images: bool = False, frames_dir: str | None = None) -> list[str]:
+    """``claude -p`` one-shot: JSON envelope, nothing persisted, tools off unless frames are offered.
 
     Images can only be sent as API-style user messages on stdin, which needs
     ``--input-format stream-json``; the CLI then requires a matching
     ``--output-format stream-json`` and ``--verbose`` (both verified against the CLI).
+
+    ``frames_dir`` turns on agentic vision. ``--tools`` sets the *available* tool set, so naming
+    only ``Read`` leaves the agent no way to write, run a command or reach the network; the
+    matching ``--allowed-tools`` keeps a non-interactive run from stalling on a permission
+    prompt it has no way to answer, and ``--add-dir`` is what makes the directory readable at all.
     """
     argv = ["claude", "-p", "--output-format", "stream-json" if images else "json"]
     if images:
         argv += ["--input-format", "stream-json", "--verbose"]
-    argv += ["--tools", "", "--disable-slash-commands", "--no-session-persistence"]
+    if frames_dir:
+        argv += ["--tools", "Read", "--allowed-tools", "Read", "--add-dir", frames_dir]
+    else:
+        argv += ["--tools", ""]
+    argv += ["--disable-slash-commands", "--no-session-persistence"]
     if settings.claude_code_model:
         argv += ["--model", settings.claude_code_model]
     return argv
@@ -382,11 +430,19 @@ async def _summarize_claude_code(
     settings: Settings,
     screen_text: str | None = None,
     grids: Sequence[ocr.Grid] = (),
+    frames: Sequence[ocr.Frame] = (),
 ) -> dict:
     prompt = _cli_prompt(caption, transcript, settings, screen_text, with_frames=bool(grids))
-    raw = await _run_cli(
-        claude_code_argv(settings, images=bool(grids)), claude_code_stdin(prompt, grids) if grids else prompt
-    )
+    # The directory lives exactly as long as the call, like the media the pipeline downloads.
+    with tempfile.TemporaryDirectory(prefix="shortform-notes-vision-") as tmpdir:
+        frames_dir = None
+        if frames and settings.vision_is_agentic:
+            frames_dir = str(write_frames(frames, Path(tmpdir)))
+            prompt += agentic_instructions(Path(frames_dir), frames)
+        raw = await _run_cli(
+            claude_code_argv(settings, images=bool(grids), frames_dir=frames_dir),
+            claude_code_stdin(prompt, grids) if grids else prompt,
+        )
     envelope = _stream_json_result(raw) if grids else json.loads(raw)
     if envelope.get("is_error"):
         raise SummaryError(f"claude -p reported an error: {str(envelope.get('result'))[:200]}")
@@ -423,8 +479,10 @@ async def _summarize_codex(
     settings: Settings,
     screen_text: str | None = None,
     grids: Sequence[ocr.Grid] = (),
+    frames: Sequence[ocr.Frame] = (),
 ) -> dict:
-    # The temp directory holds both the reply file and any contact sheets; it is removed on the way out.
+    # The temp directory holds the reply file, any contact sheets and, under agentic vision, the
+    # frames themselves; it is removed on the way out.
     with tempfile.TemporaryDirectory(prefix="shortform-notes-codex-") as tmpdir:
         last_message = Path(tmpdir) / "last.txt"
         image_paths = []
@@ -436,6 +494,9 @@ async def _summarize_codex(
         if grids:
             sheets = "; ".join(f"sheet {i} is {g.describe()}" for i, g in enumerate(grids, 1))
             prompt += f"\n\nThe attached images are the contact sheets, in order: {sheets}."
+        if frames and settings.vision_is_agentic:
+            # `codex exec` already runs --sandbox read-only, so the path in the prompt is enough.
+            prompt += agentic_instructions(write_frames(frames, Path(tmpdir)), frames)
         stdout = await _run_cli(codex_argv(settings, str(last_message), image_paths), prompt)
         text = last_message.read_text() if last_message.exists() else stdout
     return extract_json(text)
@@ -465,12 +526,15 @@ async def summarize(
         return Summary(fallback_title, "", ())
     backend = globals()[backend_name]
     grids: list[ocr.Grid] = []
+    selected: list[ocr.Frame] = []
     if frames and settings.can_see_video:
         selected = select_frames(frames)
         grids = await ocr.tile_frames(selected)
-        logger.info("vision: %d frames as %d contact sheet(s)", len(selected), len(grids))
+        mode = "agentic" if settings.vision_is_agentic else "one-shot"
+        logger.info("vision (%s): %d frames as %d contact sheet(s)", mode, len(selected), len(grids))
     try:
-        data = await backend(caption, transcript, settings, screen_text, grids)
+        # The same frames the sheets were built from, so an agentic backend can open the originals.
+        data = await backend(caption, transcript, settings, screen_text, grids, selected)
     except Exception as exc:  # noqa: BLE001 (summary is best-effort; the verbatim note is still written)
         logger.warning("summary failed (%s): %s", settings.summary_provider, exc)
         return Summary(fallback_title, "", ())

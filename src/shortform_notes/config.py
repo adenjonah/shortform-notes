@@ -31,6 +31,9 @@ SUMMARY_PROVIDERS = ("openai", "anthropic", "claude-code", "codex", "none")
 # Every summary backend takes images: the APIs as image blocks, `claude -p` via its
 # stream-json stdin, `codex exec` via `-i`. Only "none", which makes no call at all, cannot.
 VISION_SUMMARY_PROVIDERS = ("openai", "anthropic", "claude-code", "codex")
+# Agentic vision needs a backend that can open files on its own. The API backends get one frozen
+# look at whatever we put in the request, so they can only ever run the one-shot mode.
+AGENTIC_VISION_PROVIDERS = ("claude-code", "codex")
 OCR_PROVIDERS = ("local", "openai", "anthropic")
 DEFAULT_OCR_FPS = 1.0  # one frame per second; 0 means every frame
 DEFAULT_OCR_OPENAI_MODEL = "gpt-5-mini"
@@ -59,6 +62,7 @@ class Settings:
     ocr_openai_model: str
     ocr_anthropic_model: str  # who the note is for; shapes the summary prompt
     vision: bool  # attach the sampled frames to the summary call so the model sees the video
+    vision_agentic: bool  # let an agent backend open the full-resolution frames itself
     fps_explicit: bool  # a rate was asked for, so use it instead of ffmpeg's cut-aware sampling
 
     @property
@@ -69,6 +73,11 @@ class Settings:
     def can_see_video(self) -> bool:
         """Vision was asked for *and* a summary backend that can read images is selected."""
         return self.vision and self.summary_provider in VISION_SUMMARY_PROVIDERS
+
+    @property
+    def vision_is_agentic(self) -> bool:
+        """Agentic vision was asked for *and* the backend is an agent that can go and look."""
+        return self.can_see_video and self.vision_agentic and self.summary_provider in AGENTIC_VISION_PROVIDERS
 
     @property
     def vision_is_metered(self) -> bool:
@@ -161,6 +170,7 @@ def load_settings(
     ocr_provider: str | None = None,
     ocr_fps: float | None = None,
     vision: bool | None = None,
+    vision_agentic: bool | None = None,
 ) -> Settings:
     """Build settings from env, with optional explicit overrides (CLI flags win)."""
     env = _env()
@@ -180,7 +190,10 @@ def load_settings(
         ocr_backend = "openai" if openai_key and _has_module("openai") else "local"
     fps_raw = env.get("SHORTFORM_NOTES_OCR_FPS", "")
     fps = float(fps_raw) if ocr_fps is None and fps_raw else (DEFAULT_OCR_FPS if ocr_fps is None else ocr_fps)
-    vision_on = (env.get("SHORTFORM_NOTES_VISION", "0").lower() not in _FALSE) if vision is None else vision
+    # SHORTFORM_NOTES_VISION takes 0/1 as before, and "agentic" to turn on the mode as well.
+    vision_raw = env.get("SHORTFORM_NOTES_VISION", "0").lower()
+    vision_on = (vision_raw not in _FALSE) if vision is None else vision
+    agentic_on = (vision_raw == "agentic") if vision_agentic is None else vision_agentic
     return Settings(
         output_dir=Path(output_dir or env.get("SHORTFORM_NOTES_DIR") or DEFAULT_OUTPUT_DIR).expanduser(),
         openai_api_key=openai_key,
@@ -200,5 +213,6 @@ def load_settings(
         ocr_openai_model=env.get("SHORTFORM_NOTES_OCR_OPENAI_MODEL", DEFAULT_OCR_OPENAI_MODEL),
         ocr_anthropic_model=env.get("SHORTFORM_NOTES_OCR_ANTHROPIC_MODEL", DEFAULT_OCR_ANTHROPIC_MODEL),
         vision=vision_on,
+        vision_agentic=agentic_on,
         fps_explicit=ocr_fps is not None or bool(fps_raw),
     )

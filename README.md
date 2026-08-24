@@ -189,6 +189,17 @@ Without it the model's visual observations are boiled down into a few takeaways 
 | `codex` | temp PNGs passed as `codex exec -i` | included in your subscription |
 | `none` | no call is made, so nothing sees them; the note says vision was skipped | free |
 
+**Agentic mode lets the agent go and look.** `claude-code` and `codex` are agents, but one-shot vision uses them as plain model calls: one frozen look at the sheets we chose to send. `--vision agentic` keeps the sampled frames on disk for the length of the call, named by timestamp, and tells the agent where they are — so when a cell is too small to settle a question, it opens the full-resolution original instead of guessing.
+
+```bash
+shortform-notes --vision agentic <url>          # claude-code or codex
+SHORTFORM_NOTES_VISION=agentic shortform-notes <url>
+```
+
+It helps where the sheets run out of resolution: fine on-screen text, a fast cut that lands mid-motion, a face or object you want identified rather than described. It is slower — measured at 58 s against 49 s for one-shot on the same 16-frame video, since the agent makes real tool calls before answering — and it needs one of the two agent backends. On `openai` or `anthropic` it warns in the note and runs one-shot, because an API call cannot go and open a file.
+
+The agent gets the frames and nothing else: `claude -p` runs with `--tools Read`, which sets the tools that *exist* for the run, so there is no Write, no Bash and no network tool to reach for, and `--add-dir` scopes reading to the frames directory. `codex exec` already runs under `--sandbox read-only`. Sessions are still not persisted, slash commands are still off, and the directory is deleted when the call returns, like the downloaded media.
+
 The CLI prints the estimate before running. Since OCR already reads on-screen text far more accurately, vision is for what the *picture* shows — use both together and each does the job it is good at. Sampling and tiling need the `ocr` extra (OpenCV), which `start.sh` installs; for a manual install use `pip install "shortform-notes[ocr]"`.
 
 ### Configuration reference
@@ -207,7 +218,7 @@ The setup page writes `~/.config/shortform-notes/config.env`; the CLI, MCP serve
 | `SHORTFORM_NOTES_OCR` | `--ocr` / `--no-ocr` | `0` | Read on-screen text from video frames |
 | `SHORTFORM_NOTES_OCR_PROVIDER` | `--ocr-provider` | `auto` | `local` (free), `openai`, `anthropic`; auto picks openai when a key is set, else local |
 | `SHORTFORM_NOTES_OCR_FPS` | `--ocr-fps` | `1` | Frames sampled per second, for OCR and vision alike; `0` reads every frame. Setting it turns off cut-aware sampling |
-| `SHORTFORM_NOTES_VISION` | `--vision` / `--no-vision` | `0` | Send the sampled frames to the summary model as contact sheets (every backend but `none`) |
+| `SHORTFORM_NOTES_VISION` | `--vision` / `--no-vision` | `0` | Send the sampled frames to the summary model as contact sheets (every backend but `none`). `agentic` also lets `claude-code` and `codex` open the originals |
 | `SHORTFORM_NOTES_OCR_OPENAI_MODEL` | | `gpt-5-mini` | OpenAI vision model for OCR |
 | `SHORTFORM_NOTES_OCR_ANTHROPIC_MODEL` | | `claude-sonnet-5` | Anthropic vision model for OCR |
 | `SHORTFORM_NOTES_OPENAI_MODEL` | | `gpt-5-mini` | OpenAI summary model |
