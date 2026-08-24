@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "reelnotes": {
+      "command": "reelnotes",
+      "args": ["mcp"],
+      "env": {
+        "REELNOTES_DIR": "reels"
+      }
+    }
+  }
+}
