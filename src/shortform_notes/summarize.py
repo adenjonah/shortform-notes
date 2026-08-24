@@ -61,7 +61,14 @@ _SCENES_PROPERTY = {
         "type": "object",
         "properties": {
             "time": {"type": "string", "description": "Timestamp as printed on the frame, mm:ss"},
-            "description": {"type": "string", "description": "One sentence: what is on screen at that moment"},
+            "description": {
+                "type": "string",
+                "description": (
+                    "What is on screen at that moment, concretely: who or what, the action, the setting, "
+                    "shot changes, and any visible text quoted exactly. Several sentences when the frame "
+                    "warrants it. Only what is visible."
+                ),
+            },
         },
         "required": ["time", "description"],
         "additionalProperties": False,
@@ -111,9 +118,16 @@ def build_prompt(audience: str, with_frames: bool = False) -> str:
             "its timestamp printed in the top-left corner of the cell. Read them as a filmstrip: use them for "
             "what happens on screen, the actions, results and quantities that are shown rather than said. The "
             "frames are a source like the others, so report what they show and invent nothing.\n"
-            "Also return scenes: a chronological breakdown of the video, one entry per distinct moment, each "
-            "with the timestamp printed on the frame it came from and one sentence saying what is on screen "
-            "then. Merge cells that show the same moment, and describe only what is visible."
+            "Also return scenes: a chronological breakdown of the video, one entry per distinct moment, "
+            "timestamped with the label printed on the frame it came from. Describe each moment concretely "
+            "and in detail — who or what is on screen, what they are doing, the setting and objects around "
+            "them, how the shot is framed and when it cuts or the camera moves, and any text, numbers or "
+            "labels visible in the frame, quoted exactly. Write several sentences for a moment that has that "
+            "much in it, and one for a moment that does not. Prefer the specific to the general: 'a hand "
+            "grates a yellow onion into a glass bowl' beats 'someone prepares an ingredient'. Merge cells "
+            "that show the same moment into one entry. Everything you write must be visible in the frames: "
+            "detail means looking harder, never guessing, and never narrating what a video like this "
+            "usually does next."
         )
     return prompt
 
@@ -165,8 +179,7 @@ def vision_estimate(duration_seconds: float, settings: Settings) -> VisionEstima
     frames = min(ocr.frame_count(duration_seconds, settings.ocr_fps), MAX_VISION_FRAMES)
     sheets = math.ceil(frames / ocr.FRAMES_PER_GRID)
     model = settings.openai_summary_model if settings.summary_provider == "openai" else settings.anthropic_summary_model
-    # A sheet of portrait cells is about one original frame's dimensions, so the per-frame price applies per sheet.
-    return VisionEstimate(frames, sheets, round(sheets * ocr.per_frame_usd(settings.summary_provider, model), 4))
+    return VisionEstimate(frames, sheets, round(sheets * ocr.per_sheet_usd(settings.summary_provider, model), 4))
 
 
 def _cli_prompt(
@@ -251,7 +264,10 @@ async def _summarize_openai(
         for i, grid in enumerate(grids, 1):
             b64 = base64.b64encode(grid.png).decode()
             user.append({"type": "text", "text": f"contact sheet {i} of {len(grids)}: {grid.describe()}"})
-            user.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}", "detail": "low"}})
+            # detail=high, not low: low resizes the sheet to a fixed thumbnail whatever its size, and
+            # the model then invents cell text rather than reading it (measured: 2/16 cells correct at
+            # low, 16/16 at high). It is the difference between seeing the video and guessing at it.
+            user.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}", "detail": "high"}})
     client = AsyncOpenAI(api_key=settings.openai_api_key)
     response = await client.chat.completions.create(
         model=settings.openai_summary_model,

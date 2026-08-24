@@ -88,15 +88,20 @@ def _has_module(name: str) -> bool:
 
 
 def detect_summary_provider(openai_key: str | None, anthropic_key: str | None) -> str:
-    """Cheapest-to-set-up first: keys, then coding-agent CLIs already on PATH."""
-    if openai_key and _has_module("openai"):
-        return "openai"
-    if anthropic_key and _has_module("anthropic"):
-        return "anthropic"
+    """Free-to-run first: a flat-rate CLI the user already pays for beats spending per token.
+
+    "No API key required" is the tool's whole pitch, so auto-detection must never
+    quietly bill an API when ``claude`` or ``codex`` is sitting on PATH. A key is
+    still used when it is the only thing available, and ``--summary`` overrides all of it.
+    """
     if shutil.which("claude"):
         return "claude-code"
     if shutil.which("codex"):
         return "codex"
+    if openai_key and _has_module("openai"):
+        return "openai"
+    if anthropic_key and _has_module("anthropic"):
+        return "anthropic"
     return "none"
 
 

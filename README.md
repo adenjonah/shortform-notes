@@ -77,9 +77,11 @@ Requires Python 3.10+. ffmpeg is never required; when it happens to be installed
 Two steps need a model: **transcribing** the audio and **summarizing** the text. Each step has several backends. `shortform-notes` picks the first available one in the order below; configuration is only needed to override that choice.
 
 ```
-summary     OPENAI_API_KEY, then ANTHROPIC_API_KEY, then `claude` on PATH, then `codex` on PATH, else none
+summary     `claude` on PATH, then `codex` on PATH, then OPENAI_API_KEY, then ANTHROPIC_API_KEY, else none
 transcript  OPENAI_API_KEY, then faster-whisper if installed, else none
 ```
+
+Summaries prefer a coding-agent CLI over an API key on purpose. The pitch of this tool is that no API key is required, so auto-detection should not quietly spend per-token money when `claude` or `codex` — flat-rate, already paid for — is sitting on your PATH. A key is used when it is the only thing available, and `--summary` overrides the choice either way. Transcription has no such CLI, so it still prefers the key.
 
 ### Option A: your own API key
 
@@ -161,7 +163,9 @@ shortform-notes --vision --ocr-fps 2 <url>  # --ocr-fps is the sampling rate for
 
 It reuses the OCR path's machinery: the whole mp4 is downloaded, frames are sampled at the video's cuts (or at `--ocr-fps` — see [Which frames get sampled](#which-frames-get-sampled)), and near-identical frames are dropped before anything is sent. What is left goes into the summary call alongside the caption and transcript, and the note records `video` in its `sources`.
 
-**Frames are tiled, not sent one by one.** Up to 16 of them are composed into a contact sheet — a 4x4 grid in chronological order, each cell stamped with its timestamp in the corner — and the sheets are what the model receives. One sheet costs one image instead of sixteen, and the model sees the order of events laid out spatially, so it can say *when* something happened. At most 48 frames per video, evenly spaced when de-duplication leaves more, which is three sheets however long the video runs.
+**Frames are tiled, not sent one by one.** Up to 16 of them are composed into a contact sheet — a 4x4 grid in chronological order, each cell stamped with its timestamp in the corner — and the sheets are what the model receives. One sheet costs one image instead of sixteen, and the model sees the order of events laid out spatially, so it can say *when* something happened. Cells are capped at 512px on their long side, so a sheet of portrait frames is about 1152x2048 and a cell is still large enough to read. At most 48 frames per video, evenly spaced when de-duplication leaves more, which is three sheets however long the video runs.
+
+Sheets go to OpenAI at `detail=high`. That costs more than `detail=low`, and it is not optional: `low` resizes any image to the same small thumbnail, and on a contact sheet the model then *invents* the text in the cells rather than reading it. Measured on a 16-cell sheet of captioned frames, `low` transcribed 2 of 16 cells correctly and `high` transcribed 16 of 16.
 
 **What it sees is written down.** The same call also returns a scene-by-scene breakdown, which lands in the note as a `## Video breakdown` section of timestamped lines and in `--json` under `scenes`:
 
@@ -179,8 +183,8 @@ Without it the model's visual observations are boiled down into a few takeaways 
 
 | Backend | How the sheets get there | Cost |
 |---|---|---|
-| `openai` | image blocks in the Chat Completions request, `detail=low` | about $0.001 per video on `gpt-4o-mini` |
-| `anthropic` | image blocks in the Messages request | about $0.02 per video on `claude-opus-5` |
+| `openai` | image blocks in the Chat Completions request, `detail=high` | about $0.017 per video on `gpt-4o-mini` |
+| `anthropic` | image blocks in the Messages request | about $0.047 per video on `claude-opus-5` |
 | `claude-code` | an API-style user message on `claude -p --input-format stream-json` | included in your subscription |
 | `codex` | temp PNGs passed as `codex exec -i` | included in your subscription |
 | `none` | no call is made, so nothing sees them; the note says vision was skipped | free |

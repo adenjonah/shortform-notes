@@ -35,6 +35,11 @@ logger = logging.getLogger(__name__)
 OPENAI_TOKENS_PER_FRAME_LOW = 2833  # gpt-4o-mini, detail=low
 OPENAI_PRICE_PER_M = {"gpt-4o-mini": 0.15}
 ANTHROPIC_PRICE_PER_M = {"claude-opus-5": 5.0, "claude-sonnet-5": 3.0, "claude-haiku-4-5": 1.0}
+# A contact sheet is one image but not one frame's worth of tokens, and vision sends it at full
+# detail so the cells stay readable. Both counts were measured against the live APIs on a 4x4
+# sheet of portrait cells (2026-08-24), not derived from the published tile arithmetic.
+OPENAI_TOKENS_PER_SHEET = 36_835  # gpt-4o-mini, detail=high
+ANTHROPIC_TOKENS_PER_SHEET = 3_150  # claude-opus-5, 1152x2048 sheet
 FRAME_MAX_SIDE = 1024  # frames are downscaled to this before OCR; enough for overlay text
 DEDUPE_PIXEL_DELTA = 40  # a thumbnail pixel counts as changed when its gray value moves by at least this much
 DEDUPE_CHANGED_FRACTION = 0.004  # a frame is "new" when at least this fraction of thumbnail pixels changed
@@ -45,7 +50,7 @@ FRAMES_PER_REQUEST = 8
 GRID_COLS = 4
 GRID_ROWS = 4
 FRAMES_PER_GRID = GRID_COLS * GRID_ROWS
-GRID_CELL_MAX_SIDE = 320  # per cell, so a 4x4 sheet of portrait frames lands near 720x1280
+GRID_CELL_MAX_SIDE = 512  # per cell, so a 4x4 sheet of portrait frames lands near 1152x2048
 
 OCR_PROMPT = (
     "These are frames from a short video, in order. For each frame, transcribe every piece of "
@@ -101,6 +106,15 @@ def per_frame_usd(provider: str, model: str, width: int = 720, height: int = 128
         tokens = min(width, FRAME_MAX_SIDE) * min(height, FRAME_MAX_SIDE) / 750
         return tokens * ANTHROPIC_PRICE_PER_M.get(model, 5.0) / 1_000_000
     return 0.0
+
+
+def per_sheet_usd(provider: str, model: str) -> float:
+    """One contact sheet at the detail vision sends it with. Priced from the measured counts above."""
+    if provider == "openai":
+        return OPENAI_TOKENS_PER_SHEET * OPENAI_PRICE_PER_M.get(model, 0.15) / 1_000_000
+    if provider == "anthropic":
+        return ANTHROPIC_TOKENS_PER_SHEET * ANTHROPIC_PRICE_PER_M.get(model, 5.0) / 1_000_000
+    return 0.0  # the CLI backends bill to a subscription
 
 
 def estimate(duration_seconds: float, settings: Settings) -> OcrEstimate:

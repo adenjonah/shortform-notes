@@ -138,8 +138,8 @@ async def test_tile_frames_builds_chronological_sheets():
 async def test_tile_frames_downscales_and_labels_cells():
     sheets = await ocr.tile_frames(frames(1, width=720, height=1280))
     sheet = cv2.imdecode(np.frombuffer(sheets[0].png, dtype="uint8"), cv2.IMREAD_COLOR)
-    # A 720x1280 frame is capped to a 180x320 cell, then padded out to a full row of four.
-    assert sheet.shape[:2] == (ocr.GRID_CELL_MAX_SIDE, 180 * 4)
+    # A 720x1280 frame is capped to a 288x512 cell, then padded out to a full row of four.
+    assert sheet.shape[:2] == (ocr.GRID_CELL_MAX_SIDE, 288 * 4)
     corner = sheet[0:20, 0:60]
     assert corner.min() == 0 and corner.max() == 255  # the timestamp is burnt in, white on black
     assert await ocr.tile_frames([]) == []
@@ -157,7 +157,7 @@ async def test_sheets_reach_the_openai_payload(tmp_path):
     images = [part for part in content if part["type"] == "image_url"]
     assert len(images) == 2  # two sheets, not twenty frames
     assert images[0]["image_url"]["url"].startswith("data:image/png;base64,")
-    assert images[0]["image_url"]["detail"] == "low"
+    assert images[0]["image_url"]["detail"] == "high"  # low resizes the sheet to a thumbnail
     assert content[0]["text"].startswith("Caption:\ncap")
     labels = [part.get("text") or "" for part in content]
     assert any(label.startswith("contact sheet 1 of 2: 16 frames, 00:00 to 00:15") for label in labels)
@@ -299,7 +299,7 @@ async def test_summarize_never_sends_more_than_the_cap(tmp_path):
 def test_vision_estimate_prices_sheets_not_frames(tmp_path):
     est = vision_estimate(60, settings(tmp_path))
     assert est.frames == 48 and est.sheets == 3
-    assert est.usd == pytest.approx(3 * 2833 * 0.15 / 1e6, abs=1e-4)  # three images, not forty-eight
+    assert est.usd == pytest.approx(3 * ocr.OPENAI_TOKENS_PER_SHEET * 0.15 / 1e6, abs=1e-4)  # 3 images, not 48
     short = vision_estimate(10, settings(tmp_path))
     assert short.frames == 10 and short.sheets == 1
     assert "1 contact sheet," in short.describe()

@@ -41,10 +41,11 @@ def settings(**overrides) -> config.Settings:
 @pytest.mark.parametrize(
     "openai_key,anthropic_key,on_path,expected",
     [
-        ("sk", None, {"claude"}, "openai"),
-        (None, "sk-ant", {"claude"}, "anthropic"),
+        ("sk", None, {"claude"}, "claude-code"),  # a subscription CLI beats spending per token
+        ("sk", "sk-ant", {"codex"}, "codex"),
         (None, None, {"claude", "codex"}, "claude-code"),
-        (None, None, {"codex"}, "codex"),
+        ("sk", None, set(), "openai"),  # no CLI: the key is all there is
+        (None, "sk-ant", set(), "anthropic"),
         (None, None, set(), "none"),
     ],
 )
