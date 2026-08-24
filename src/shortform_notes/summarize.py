@@ -11,10 +11,11 @@ The CLI backends run one-shot with all tools disabled and read-only sandboxes;
 they receive only the prompt. Summaries are best-effort: on any failure the
 note is still written with the verbatim caption and transcript.
 
-With ``--vision`` the two API backends also receive frames sampled from the
-video (the same frames the OCR path samples), so a video that shows rather than
-says its point summarizes correctly. The CLI backends take no images, so vision
-degrades to a text-only summary and a warning on the note.
+With ``--vision`` every backend also sees the video. Frames sampled by ``ocr``
+are tiled into timestamped contact sheets and sent as images: the APIs take
+image blocks, ``claude -p`` takes them as an API-style user message on its
+``--input-format stream-json`` stdin, and ``codex exec`` takes them as ``-i``
+files. Only ``none``, which makes no call at all, cannot see them.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ import asyncio
 import base64
 import json
 import logging
+import math
 import re
 import shutil
 import tempfile
@@ -37,7 +39,8 @@ logger = logging.getLogger(__name__)
 
 CLI_TIMEOUT_SECONDS = 180
 # Hard cap on frames per summary call: a long video would otherwise blow up one request.
-MAX_VISION_FRAMES = 20
+# Tiled 16 to a contact sheet, so this is at most 3 images however long the video is.
+MAX_VISION_FRAMES = 48
 
 SUMMARY_SCHEMA = {
     "type": "object",
@@ -79,9 +82,11 @@ def build_prompt(audience: str, with_frames: bool = False) -> str:
     )
     if with_frames:
         prompt += (
-            "\nYou are also given frames sampled from the video in order, each labelled with its timestamp. "
-            "Use them for what happens on screen: actions, results, and quantities that are shown rather than "
-            "said. Frames are a source like the others, so report what they show and invent nothing."
+            f"\nYou are also given contact sheets of frames sampled from the video. Each cell is one frame, "
+            f"laid out {ocr.GRID_COLS} per row in chronological order, left to right then top to bottom, with "
+            "its timestamp printed in the top-left corner of the cell. Read them as a filmstrip: use them for "
+            "what happens on screen, the actions, results and quantities that are shown rather than said. The "
+            "frames are a source like the others, so report what they show and invent nothing."
         )
     return prompt
 
@@ -93,7 +98,7 @@ def _user_message(caption: str | None, transcript: str | None, screen_text: str 
     return msg
 
 
-# Vision: the frames sampled by ocr.extract_frames, attached to the summary call itself.
+# Vision: frames sampled by ocr.extract_frames, tiled into contact sheets, attached to the summary call.
 
 
 def select_frames(frames: Sequence[ocr.Frame], limit: int = MAX_VISION_FRAMES) -> list[ocr.Frame]:
@@ -104,17 +109,49 @@ def select_frames(frames: Sequence[ocr.Frame], limit: int = MAX_VISION_FRAMES) -
     return [frames[round(i * step)] for i in range(limit)]
 
 
-def vision_estimate(duration_seconds: float, settings: Settings) -> tuple[int, float]:
-    """(frames sent, USD) for one video, before de-duplication drops near-identical frames."""
+def _image_block(grid: ocr.Grid) -> dict:
+    """Anthropic-shaped image block; also what ``claude -p`` accepts on its stream-json stdin."""
+    return {
+        "type": "image",
+        "source": {"type": "base64", "media_type": "image/png", "data": base64.b64encode(grid.png).decode()},
+    }
+
+
+@dataclass(frozen=True)
+class VisionEstimate:
+    frames: int
+    sheets: int  # images actually sent, after tiling
+    usd: float  # 0.0 on the subscription backends
+
+    def describe(self) -> str:
+        sheets = f"{self.sheets} contact sheet{'s' if self.sheets != 1 else ''}"
+        price = "included in your subscription" if not self.usd else f"about ${self.usd:.3f}"
+        return f"up to {self.frames} frames as {sheets}, {price}"
+
+
+def vision_estimate(duration_seconds: float, settings: Settings) -> VisionEstimate:
+    """What one video costs, before de-duplication drops near-identical frames.
+
+    Priced per contact sheet, not per frame: tiling is what makes vision affordable.
+    ``claude-code`` and ``codex`` run on a subscription, so their price is 0.
+    """
     frames = min(ocr.frame_count(duration_seconds, settings.ocr_fps), MAX_VISION_FRAMES)
+    sheets = math.ceil(frames / ocr.FRAMES_PER_GRID)
     model = settings.openai_summary_model if settings.summary_provider == "openai" else settings.anthropic_summary_model
-    return frames, round(frames * ocr.per_frame_usd(settings.summary_provider, model), 4)
+    # A sheet of portrait cells is about one original frame's dimensions, so the per-frame price applies per sheet.
+    return VisionEstimate(frames, sheets, round(sheets * ocr.per_frame_usd(settings.summary_provider, model), 4))
 
 
-def _cli_prompt(caption: str | None, transcript: str | None, settings: Settings, screen_text: str | None = None) -> str:
+def _cli_prompt(
+    caption: str | None,
+    transcript: str | None,
+    settings: Settings,
+    screen_text: str | None = None,
+    with_frames: bool = False,
+) -> str:
     """Single-string prompt for agent CLIs: instructions, schema and content, JSON-only reply."""
     return (
-        f"{build_prompt(settings.audience)}\n\n"
+        f"{build_prompt(settings.audience, with_frames)}\n\n"
         f"Reply with ONLY a JSON object matching this schema, no prose, no code fences:\n"
         f"{json.dumps(SUMMARY_SCHEMA)}\n\n{_user_message(caption, transcript, screen_text)}"
     )
@@ -150,22 +187,22 @@ async def _summarize_openai(
     transcript: str | None,
     settings: Settings,
     screen_text: str | None = None,
-    frames: Sequence[ocr.Frame] = (),
+    grids: Sequence[ocr.Grid] = (),
 ) -> dict:
     from openai import AsyncOpenAI
 
     user: str | list[dict] = _user_message(caption, transcript, screen_text)
-    if frames:
+    if grids:
         user = [{"type": "text", "text": user}]
-        for frame in frames:
-            b64 = base64.b64encode(frame.png).decode()
-            user.append({"type": "text", "text": f"frame at {ocr.timestamp(frame.seconds)}"})
+        for i, grid in enumerate(grids, 1):
+            b64 = base64.b64encode(grid.png).decode()
+            user.append({"type": "text", "text": f"contact sheet {i} of {len(grids)}: {grid.describe()}"})
             user.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}", "detail": "low"}})
     client = AsyncOpenAI(api_key=settings.openai_api_key)
     response = await client.chat.completions.create(
         model=settings.openai_summary_model,
         messages=[
-            {"role": "system", "content": build_prompt(settings.audience, with_frames=bool(frames))},
+            {"role": "system", "content": build_prompt(settings.audience, with_frames=bool(grids))},
             {"role": "user", "content": user},
         ],
         response_format={
@@ -183,29 +220,20 @@ async def _summarize_anthropic(
     transcript: str | None,
     settings: Settings,
     screen_text: str | None = None,
-    frames: Sequence[ocr.Frame] = (),
+    grids: Sequence[ocr.Grid] = (),
 ) -> dict:
     from anthropic import AsyncAnthropic
 
     content: list[dict] = []
-    for frame in frames:
-        content.append({"type": "text", "text": f"frame at {ocr.timestamp(frame.seconds)}"})
-        content.append(
-            {
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": "image/png",
-                    "data": base64.b64encode(frame.png).decode(),
-                },
-            }
-        )
+    for i, grid in enumerate(grids, 1):
+        content.append({"type": "text", "text": f"contact sheet {i} of {len(grids)}: {grid.describe()}"})
+        content.append(_image_block(grid))
     content.append({"type": "text", "text": _user_message(caption, transcript, screen_text)})
     client = AsyncAnthropic(api_key=settings.anthropic_api_key)
     response = await client.messages.create(
         model=settings.anthropic_summary_model,
         max_tokens=2000,
-        system=build_prompt(settings.audience, with_frames=bool(frames)),
+        system=build_prompt(settings.audience, with_frames=bool(grids)),
         messages=[{"role": "user", "content": content}],
         output_config={"format": {"type": "json_schema", "schema": SUMMARY_SCHEMA}},
     )
@@ -238,21 +266,41 @@ async def _run_cli(argv: list[str], stdin_text: str) -> str:
     return out.decode(errors="replace")
 
 
-def claude_code_argv(settings: Settings) -> list[str]:
-    """``claude -p`` one-shot: JSON envelope, every tool disabled, nothing persisted."""
-    argv = [
-        "claude",
-        "-p",
-        "--output-format",
-        "json",
-        "--tools",
-        "",
-        "--disable-slash-commands",
-        "--no-session-persistence",
-    ]
+def claude_code_argv(settings: Settings, images: bool = False) -> list[str]:
+    """``claude -p`` one-shot: JSON envelope, every tool disabled, nothing persisted.
+
+    Images can only be sent as API-style user messages on stdin, which needs
+    ``--input-format stream-json``; the CLI then requires a matching
+    ``--output-format stream-json`` and ``--verbose`` (both verified against the CLI).
+    """
+    argv = ["claude", "-p", "--output-format", "stream-json" if images else "json"]
+    if images:
+        argv += ["--input-format", "stream-json", "--verbose"]
+    argv += ["--tools", "", "--disable-slash-commands", "--no-session-persistence"]
     if settings.claude_code_model:
         argv += ["--model", settings.claude_code_model]
     return argv
+
+
+def claude_code_stdin(prompt: str, grids: Sequence[ocr.Grid]) -> str:
+    """One stream-json user message: the prompt, then a labelled image block per contact sheet."""
+    content: list[dict] = [{"type": "text", "text": prompt}]
+    for i, grid in enumerate(grids, 1):
+        content.append({"type": "text", "text": f"contact sheet {i} of {len(grids)}: {grid.describe()}"})
+        content.append(_image_block(grid))
+    return json.dumps({"type": "user", "message": {"role": "user", "content": content}}) + "\n"
+
+
+def _stream_json_result(raw: str) -> dict:
+    """The final ``result`` event of a stream-json run; same shape as the plain JSON envelope."""
+    for line in reversed(raw.strip().splitlines()):
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict) and event.get("type") == "result":
+            return event
+    raise SummaryError(f"no result event in claude stream-json output: {raw[:120]!r}")
 
 
 async def _summarize_claude_code(
@@ -260,27 +308,37 @@ async def _summarize_claude_code(
     transcript: str | None,
     settings: Settings,
     screen_text: str | None = None,
-    frames: Sequence[ocr.Frame] = (),
+    grids: Sequence[ocr.Grid] = (),
 ) -> dict:
-    raw = await _run_cli(claude_code_argv(settings), _cli_prompt(caption, transcript, settings, screen_text))
-    envelope = json.loads(raw)
+    prompt = _cli_prompt(caption, transcript, settings, screen_text, with_frames=bool(grids))
+    raw = await _run_cli(
+        claude_code_argv(settings, images=bool(grids)), claude_code_stdin(prompt, grids) if grids else prompt
+    )
+    envelope = _stream_json_result(raw) if grids else json.loads(raw)
     if envelope.get("is_error"):
         raise SummaryError(f"claude -p reported an error: {str(envelope.get('result'))[:200]}")
     return extract_json(str(envelope.get("result") or ""))
 
 
-def codex_argv(settings: Settings, last_message_path: str) -> list[str]:
-    """``codex exec`` one-shot: read-only sandbox, no approval prompts, final message to a file."""
+def codex_argv(settings: Settings, last_message_path: str, image_paths: Sequence[str] = ()) -> list[str]:
+    """``codex exec`` one-shot: read-only sandbox, no approval prompts, final message to a file.
+
+    ``-i/--image`` attaches files to the initial prompt, so contact sheets go through as temp PNGs.
+    """
+    # No --ask-for-approval: codex 0.147 removed it from `exec`, which never prompts anyway.
+    # --skip-git-repo-check because a reel is imported from wherever the user happens to be,
+    # and codex otherwise refuses to start outside a trusted git repo.
     argv = [
         "codex",
         "exec",
         "--sandbox",
         "read-only",
-        "--ask-for-approval",
-        "never",
+        "--skip-git-repo-check",
         "--output-last-message",
         last_message_path,
     ]
+    for path in image_paths:
+        argv += ["-i", path]
     if settings.codex_model:
         argv += ["--model", settings.codex_model]
     return argv + ["-"]  # "-" = read the prompt from stdin
@@ -291,13 +349,21 @@ async def _summarize_codex(
     transcript: str | None,
     settings: Settings,
     screen_text: str | None = None,
-    frames: Sequence[ocr.Frame] = (),
+    grids: Sequence[ocr.Grid] = (),
 ) -> dict:
+    # The temp directory holds both the reply file and any contact sheets; it is removed on the way out.
     with tempfile.TemporaryDirectory(prefix="shortform-notes-codex-") as tmpdir:
         last_message = Path(tmpdir) / "last.txt"
-        stdout = await _run_cli(
-            codex_argv(settings, str(last_message)), _cli_prompt(caption, transcript, settings, screen_text)
-        )
+        image_paths = []
+        for i, grid in enumerate(grids, 1):
+            path = Path(tmpdir) / f"sheet-{i}.png"
+            path.write_bytes(grid.png)
+            image_paths.append(str(path))
+        prompt = _cli_prompt(caption, transcript, settings, screen_text, with_frames=bool(grids))
+        if grids:
+            sheets = "; ".join(f"sheet {i} is {g.describe()}" for i, g in enumerate(grids, 1))
+            prompt += f"\n\nThe attached images are the contact sheets, in order: {sheets}."
+        stdout = await _run_cli(codex_argv(settings, str(last_message), image_paths), prompt)
         text = last_message.read_text() if last_message.exists() else stdout
     return extract_json(text)
 
@@ -325,10 +391,13 @@ async def summarize(
     if backend_name is None:
         return Summary(fallback_title, "", ())
     backend = globals()[backend_name]
-    # Every backend takes ``frames`` for one uniform signature; only the image-capable ones are given any.
-    images = select_frames(frames) if (frames and settings.can_see_video) else ()
+    grids: list[ocr.Grid] = []
+    if frames and settings.can_see_video:
+        selected = select_frames(frames)
+        grids = await ocr.tile_frames(selected)
+        logger.info("vision: %d frames as %d contact sheet(s)", len(selected), len(grids))
     try:
-        data = await backend(caption, transcript, settings, screen_text, images)
+        data = await backend(caption, transcript, settings, screen_text, grids)
     except Exception as exc:  # noqa: BLE001 (summary is best-effort; the verbatim note is still written)
         logger.warning("summary failed (%s): %s", settings.summary_provider, exc)
         return Summary(fallback_title, "", ())

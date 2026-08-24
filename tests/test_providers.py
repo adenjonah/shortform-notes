@@ -112,7 +112,7 @@ def test_codex_argv_is_read_only_and_reads_stdin():
     argv = summarize.codex_argv(settings(summary_provider="codex"), "/tmp/last.txt")
     assert argv[:2] == ["codex", "exec"]
     assert argv[argv.index("--sandbox") + 1] == "read-only"
-    assert argv[argv.index("--ask-for-approval") + 1] == "never"
+    assert "--ask-for-approval" not in argv  # removed from `codex exec` in 0.147
     assert argv[argv.index("--output-last-message") + 1] == "/tmp/last.txt"
     assert argv[-1] == "-"
 

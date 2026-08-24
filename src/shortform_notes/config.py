@@ -26,8 +26,9 @@ DEFAULT_ANTHROPIC_SUMMARY_MODEL = "claude-opus-5"
 DEFAULT_WHISPER_MODEL = "base"
 
 SUMMARY_PROVIDERS = ("openai", "anthropic", "claude-code", "codex", "none")
-# Summary backends whose SDKs accept images in the same call as the prompt.
-VISION_SUMMARY_PROVIDERS = ("openai", "anthropic")
+# Every summary backend takes images: the APIs as image blocks, `claude -p` via its
+# stream-json stdin, `codex exec` via `-i`. Only "none", which makes no call at all, cannot.
+VISION_SUMMARY_PROVIDERS = ("openai", "anthropic", "claude-code", "codex")
 OCR_PROVIDERS = ("local", "openai", "anthropic")
 DEFAULT_OCR_FPS = 1.0  # one frame per second; 0 means every frame
 DEFAULT_OCR_OPENAI_MODEL = "gpt-4o-mini"
@@ -63,8 +64,13 @@ class Settings:
 
     @property
     def can_see_video(self) -> bool:
-        """Vision was asked for *and* the chosen summary backend can read images."""
+        """Vision was asked for *and* a summary backend that can read images is selected."""
         return self.vision and self.summary_provider in VISION_SUMMARY_PROVIDERS
+
+    @property
+    def vision_is_metered(self) -> bool:
+        """True when frames cost money per call; the CLI backends bill to a subscription."""
+        return self.summary_provider in ("openai", "anthropic")
 
     @property
     def can_summarize(self) -> bool:

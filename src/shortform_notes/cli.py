@@ -10,6 +10,7 @@ import sys
 
 from shortform_notes import __version__
 from shortform_notes.config import OCR_PROVIDERS, SUMMARY_PROVIDERS, TRANSCRIBE_PROVIDERS, load_settings
+from shortform_notes.ocr import FRAMES_PER_GRID
 from shortform_notes.pipeline import ReelImportError, import_reel
 from shortform_notes.summarize import MAX_VISION_FRAMES, vision_estimate
 
@@ -60,8 +61,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--vision",
         action="store_true",
         help=(
-            "show the summary model the video: sampled frames go into the summary call itself "
-            f"(openai and anthropic backends only, at most {MAX_VISION_FRAMES} frames per video)"
+            "show the summary model the video: sampled frames are tiled into timestamped contact sheets "
+            f"and sent with the summary call (any backend but 'none'; at most {MAX_VISION_FRAMES} frames "
+            f"per video, {FRAMES_PER_GRID} to a sheet)"
         ),
     )
     parser.add_argument("--no-vision", action="store_true", help="turn vision off even if the config enables it")
@@ -103,13 +105,9 @@ async def _run(urls: list[str], args: argparse.Namespace) -> int:
             note = estimate(secs, settings).describe()
             print(f"OCR on ({settings.ocr_provider}, {rate}): a {secs}s video is {note}", file=sys.stderr)
     if settings.can_see_video and not args.json:
-        # One line, not two: past ~20s of video the frame cap makes every duration cost the same.
-        count, usd = vision_estimate(60, settings)
-        print(
-            f"vision on ({settings.summary_provider}, {rate}): a 60s video sends up to "
-            f"{count} frames, about ${usd:.3f}",
-            file=sys.stderr,
-        )
+        # One line, not two: past the frame cap every duration sends the same number of sheets.
+        note = vision_estimate(60, settings).describe()
+        print(f"vision on ({settings.summary_provider}, {rate}): a 60s video sends {note}", file=sys.stderr)
     failures = 0
     for url in urls:
         try:

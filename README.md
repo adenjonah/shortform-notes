@@ -102,7 +102,9 @@ shortform-notes --summary codex <url>
 Each reel is one subprocess call with the prompt on stdin:
 
 - Claude Code: `claude -p --output-format json --tools "" --disable-slash-commands --no-session-persistence`
-- Codex: `codex exec --sandbox read-only --ask-for-approval never --output-last-message <tmp> -`
+- Codex: `codex exec --sandbox read-only --skip-git-repo-check --output-last-message <tmp> -`
+
+With `--vision` the Claude Code call becomes `--output-format stream-json --input-format stream-json --verbose` so the contact sheets can ride along as image blocks on stdin, and the Codex call gains one `-i <sheet>.png` per sheet. The tool restrictions above are unchanged either way.
 
 All tools are disabled and no session is persisted. The agent receives only the caption and transcript. Set `SHORTFORM_NOTES_CLAUDE_CODE_MODEL` / `SHORTFORM_NOTES_CODEX_MODEL` to pick a model; otherwise the CLI's own default is used.
 
@@ -149,12 +151,19 @@ shortform-notes --vision --ocr-fps 2 <url>  # --ocr-fps is the sampling rate for
 
 It reuses the OCR path's machinery: the whole mp4 is downloaded, frames are sampled at `--ocr-fps` (1 per second by default), and near-identical frames are dropped before anything is sent. What is left goes into the summary call alongside the caption and transcript, and the note records `video` in its `sources`.
 
-Two limits worth knowing:
+**Frames are tiled, not sent one by one.** Up to 16 of them are composed into a contact sheet — a 4x4 grid in chronological order, each cell stamped with its timestamp in the corner — and the sheets are what the model receives. One sheet costs one image instead of sixteen, and the model sees the order of events laid out spatially, so it can say *when* something happened. At most 48 frames per video, evenly spaced when de-duplication leaves more, which is three sheets however long the video runs.
 
-- **Only the `openai` and `anthropic` summary backends accept images.** With `claude-code`, `codex` or `none`, the summary still runs on caption and transcript alone and the note carries a warning saying vision was skipped.
-- **At most 20 frames per video**, evenly spaced across it when de-duplication leaves more. A three-minute video therefore costs the same as a twenty-second one.
+**Every summary backend can see them**, by the route its own interface allows:
 
-At the 20-frame cap that is about $0.009 per video on `gpt-4o-mini` and about $0.10 on `claude-opus-5`, using the per-frame prices in the OCR table above. The CLI prints the estimate before running. Sampling frames needs the `ocr` extra (OpenCV), which `start.sh` installs; for a manual install use `pip install "shortform-notes[ocr]"`.
+| Backend | How the sheets get there | Cost |
+|---|---|---|
+| `openai` | image blocks in the Chat Completions request, `detail=low` | about $0.001 per video on `gpt-4o-mini` |
+| `anthropic` | image blocks in the Messages request | about $0.02 per video on `claude-opus-5` |
+| `claude-code` | an API-style user message on `claude -p --input-format stream-json` | included in your subscription |
+| `codex` | temp PNGs passed as `codex exec -i` | included in your subscription |
+| `none` | no call is made, so nothing sees them; the note says vision was skipped | free |
+
+The CLI prints the estimate before running. Since OCR already reads on-screen text far more accurately, vision is for what the *picture* shows — use both together and each does the job it is good at. Sampling and tiling need the `ocr` extra (OpenCV), which `start.sh` installs; for a manual install use `pip install "shortform-notes[ocr]"`.
 
 ### Configuration reference
 
@@ -172,7 +181,7 @@ The setup page writes `~/.config/shortform-notes/config.env`; the CLI, MCP serve
 | `SHORTFORM_NOTES_OCR` | `--ocr` / `--no-ocr` | `0` | Read on-screen text from video frames |
 | `SHORTFORM_NOTES_OCR_PROVIDER` | `--ocr-provider` | `auto` | `local` (free), `openai`, `anthropic`; auto picks openai when a key is set, else local |
 | `SHORTFORM_NOTES_OCR_FPS` | `--ocr-fps` | `1` | Frames sampled per second, for OCR and vision alike; `0` reads every frame |
-| `SHORTFORM_NOTES_VISION` | `--vision` / `--no-vision` | `0` | Send the sampled frames to the summary model (`openai` / `anthropic` only) |
+| `SHORTFORM_NOTES_VISION` | `--vision` / `--no-vision` | `0` | Send the sampled frames to the summary model as contact sheets (every backend but `none`) |
 | `SHORTFORM_NOTES_OCR_OPENAI_MODEL` | | `gpt-4o-mini` | OpenAI vision model for OCR |
 | `SHORTFORM_NOTES_OCR_ANTHROPIC_MODEL` | | `claude-opus-5` | Anthropic vision model for OCR |
 | `SHORTFORM_NOTES_OPENAI_MODEL` | | `gpt-4o-mini` | OpenAI summary model |

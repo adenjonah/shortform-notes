@@ -66,10 +66,7 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> tuple[Ree
     warnings: list[str] = []
     want_frames = settings.ocr or settings.can_see_video
     if settings.vision and not settings.can_see_video:
-        warnings.append(
-            f"Vision skipped: the {settings.summary_provider} summary backend cannot read images "
-            "(use --summary openai or --summary anthropic)"
-        )
+        warnings.append("Vision skipped: no summary backend is configured, so nothing would see the frames")
 
     if platform == "instagram":
         shortcode = await instagram.resolve_shortcode(url)
@@ -108,8 +105,7 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> tuple[Ree
     # Sampled once and shared: the summary call sees the frames, OCR reads the same ones.
     frames: list[ocr.Frame] = []
     if settings.can_see_video and downloaded and downloaded.video_path:
-        count, usd = vision_estimate(duration, settings)
-        logger.info("vision: up to %d frames via %s, about $%.3f", count, settings.summary_provider, usd)
+        logger.info("vision (%s): %s", settings.summary_provider, vision_estimate(duration, settings).describe())
         try:
             frames = await ocr.extract_frames(downloaded.video_path, settings.ocr_fps)
         except Exception as exc:  # noqa: BLE001 (surface as a warning; a text-only summary still runs)

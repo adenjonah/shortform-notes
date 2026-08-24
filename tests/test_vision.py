@@ -1,13 +1,14 @@
-"""Vision: frames on the summary call, the frame cap, and the unsupported-backend fallback.
+"""Vision: contact-sheet tiling, the four backend payloads, the frame cap, and pipeline wiring.
 
-No network and no SDK required: ``openai`` and ``anthropic`` are replaced by stub
-modules whose clients record the payload they were handed.
+No network and no subprocesses: ``openai`` / ``anthropic`` are replaced by stub modules whose
+clients record their payload, and the CLI backends are patched at ``summarize._run_cli``.
 """
 
 import json
 import sys
 import types
 from contextlib import contextmanager
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -18,7 +19,11 @@ from shortform_notes.media import DownloadedMedia
 from shortform_notes.pipeline import import_reel
 from shortform_notes.summarize import MAX_VISION_FRAMES, select_frames, vision_estimate
 
+cv2 = pytest.importorskip("cv2")  # vision samples and tiles frames with OpenCV
+np = pytest.importorskip("numpy")
+
 REPLY = {"title": "T", "summary": "S", "takeaways": ["a"]}
+REPLY_JSON = json.dumps(REPLY)
 
 
 def settings(tmp_path, **over) -> config.Settings:
@@ -45,8 +50,13 @@ def settings(tmp_path, **over) -> config.Settings:
     return config.Settings(**{**base, **over})
 
 
-def frames(count: int, step: float = 1.0) -> list[ocr.Frame]:
-    return [ocr.Frame(seconds=i * step, png=f"png{i}".encode()) for i in range(count)]
+def frames(count: int, width: int = 180, height: int = 320) -> list[ocr.Frame]:
+    """Real PNGs, portrait like a reel, each a different shade so tiling is visible."""
+    out = []
+    for i in range(count):
+        img = np.full((height, width, 3), (i * 7) % 256, dtype=np.uint8)
+        out.append(ocr.Frame(seconds=float(i), png=cv2.imencode(".png", img)[1].tobytes()))
+    return out
 
 
 def video(**over) -> DownloadedMedia:
@@ -72,8 +82,7 @@ def stub_openai(recorder: dict):
     class Completions:
         async def create(self, **kwargs):
             recorder.update(kwargs)
-            message = SimpleNamespace(content=json.dumps(REPLY))
-            return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=REPLY_JSON))])
 
     module = types.ModuleType("openai")
     module.AsyncOpenAI = lambda **_: SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
@@ -86,7 +95,7 @@ def stub_anthropic(recorder: dict):
     class Messages:
         async def create(self, **kwargs):
             recorder.update(kwargs)
-            block = SimpleNamespace(type="text", text=json.dumps(REPLY))
+            block = SimpleNamespace(type="text", text=REPLY_JSON)
             return SimpleNamespace(stop_reason="end_turn", content=[block])
 
     module = types.ModuleType("anthropic")
@@ -95,45 +104,171 @@ def stub_anthropic(recorder: dict):
         yield
 
 
-# ── frames on the summary call ─────────────────────────────────────────
+def stream_json_output(result: str = REPLY_JSON, is_error: bool = False) -> str:
+    """What `claude -p --output-format stream-json` writes: events, then a final result event."""
+    return "\n".join(
+        [
+            json.dumps({"type": "system", "subtype": "init", "session_id": "s1"}),
+            json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": result}]}}),
+            json.dumps({"type": "result", "subtype": "success", "is_error": is_error, "result": result}),
+        ]
+    )
 
 
-async def test_frames_reach_the_openai_payload(tmp_path):
+# ── tiling ─────────────────────────────────────────────────────────────
+
+
+async def test_tile_frames_builds_chronological_sheets():
+    sheets = await ocr.tile_frames(frames(20))
+    assert len(sheets) == 2  # 16 to a sheet, then the remainder
+    assert sheets[0].seconds == tuple(float(i) for i in range(16))
+    assert sheets[1].seconds == (16.0, 17.0, 18.0, 19.0)
+    first = cv2.imdecode(np.frombuffer(sheets[0].png, dtype="uint8"), cv2.IMREAD_COLOR)
+    assert first.shape[:2] == (320 * 4, 180 * 4)  # 4x4 of cells already at the 320 max side
+    partial = cv2.imdecode(np.frombuffer(sheets[1].png, dtype="uint8"), cv2.IMREAD_COLOR)
+    assert partial.shape[:2] == (320, 180 * 4)  # one padded row, not a ragged image
+    assert sheets[1].describe() == "4 frames, 00:16 to 00:19"
+
+
+async def test_tile_frames_downscales_and_labels_cells():
+    sheets = await ocr.tile_frames(frames(1, width=720, height=1280))
+    sheet = cv2.imdecode(np.frombuffer(sheets[0].png, dtype="uint8"), cv2.IMREAD_COLOR)
+    # A 720x1280 frame is capped to a 180x320 cell, then padded out to a full row of four.
+    assert sheet.shape[:2] == (ocr.GRID_CELL_MAX_SIDE, 180 * 4)
+    corner = sheet[0:20, 0:60]
+    assert corner.min() == 0 and corner.max() == 255  # the timestamp is burnt in, white on black
+    assert await ocr.tile_frames([]) == []
+
+
+# ── API backends ───────────────────────────────────────────────────────
+
+
+async def test_sheets_reach_the_openai_payload(tmp_path):
     sent = {}
     with stub_openai(sent):
-        result = await summarize.summarize("cap", "spoken", settings(tmp_path), frames=frames(3))
+        result = await summarize.summarize("cap", "spoken", settings(tmp_path), frames=frames(20))
     assert result.title == "T"
     content = sent["messages"][1]["content"]
     images = [part for part in content if part["type"] == "image_url"]
-    assert len(images) == 3
+    assert len(images) == 2  # two sheets, not twenty frames
     assert images[0]["image_url"]["url"].startswith("data:image/png;base64,")
     assert images[0]["image_url"]["detail"] == "low"
     assert content[0]["text"].startswith("Caption:\ncap")
-    assert "frame at 00:02" in [part.get("text") for part in content]
-    assert "frames sampled from the video" in sent["messages"][0]["content"]
+    labels = [part.get("text") or "" for part in content]
+    assert any(label.startswith("contact sheet 1 of 2: 16 frames, 00:00 to 00:15") for label in labels)
+    assert "contact sheets of frames sampled" in sent["messages"][0]["content"]
 
 
-async def test_frames_reach_the_anthropic_payload(tmp_path):
+async def test_sheets_reach_the_anthropic_payload(tmp_path):
     sent = {}
     with stub_anthropic(sent):
         result = await summarize.summarize(
-            "cap", None, settings(tmp_path, summary_provider="anthropic"), frames=frames(2)
+            "cap", None, settings(tmp_path, summary_provider="anthropic"), frames=frames(3)
         )
     assert result.title == "T"
     content = sent["messages"][0]["content"]
     images = [part for part in content if part["type"] == "image"]
-    assert len(images) == 2
+    assert len(images) == 1
     assert images[0]["source"]["media_type"] == "image/png"
-    assert content[-1]["text"].startswith("Caption:\ncap")  # the text prompt comes after the frames
-    assert "frames sampled from the video" in sent["system"]
+    assert content[-1]["text"].startswith("Caption:\ncap")  # the text prompt comes after the sheets
+    assert "contact sheets of frames sampled" in sent["system"]
 
 
 async def test_no_frames_keeps_the_plain_text_payload(tmp_path):
     sent = {}
     with stub_openai(sent):
-        await summarize.summarize("cap", None, settings(tmp_path, vision=False))
+        await summarize.summarize("cap", None, settings(tmp_path, vision=False), frames=frames(4))
     assert sent["messages"][1]["content"].startswith("Caption:\ncap")
-    assert "frames sampled from the video" not in sent["messages"][0]["content"]
+    assert "contact sheets" not in sent["messages"][0]["content"]
+
+
+# ── claude-code backend ────────────────────────────────────────────────
+
+
+async def test_claude_code_uses_stream_json_with_image_blocks(tmp_path):
+    with patch.object(summarize, "_run_cli", AsyncMock(return_value=stream_json_output())) as run:
+        result = await summarize.summarize(
+            "cap", None, settings(tmp_path, summary_provider="claude-code"), frames=frames(20)
+        )
+    assert result.title == "T"
+    argv, stdin = run.await_args.args
+    assert argv[argv.index("--input-format") + 1] == "stream-json"
+    assert argv[argv.index("--output-format") + 1] == "stream-json"
+    assert "--verbose" in argv  # the CLI rejects stream-json output without it
+    assert argv[argv.index("--tools") + 1] == ""  # hardening is unchanged
+    assert "--no-session-persistence" in argv and "--disable-slash-commands" in argv
+
+    message = json.loads(stdin.strip())
+    assert message["type"] == "user" and message["message"]["role"] == "user"
+    content = message["message"]["content"]
+    assert content[0]["text"].startswith("You are turning a short social-media video")
+    images = [part for part in content if part["type"] == "image"]
+    assert len(images) == 2
+    assert images[0]["source"]["type"] == "base64" and images[0]["source"]["media_type"] == "image/png"
+
+
+async def test_claude_code_without_vision_keeps_the_plain_stdin_path(tmp_path):
+    envelope = json.dumps({"is_error": False, "result": REPLY_JSON})
+    with patch.object(summarize, "_run_cli", AsyncMock(return_value=envelope)) as run:
+        result = await summarize.summarize(
+            "cap", None, settings(tmp_path, summary_provider="claude-code", vision=False)
+        )
+    assert result.title == "T"
+    argv, stdin = run.await_args.args
+    assert argv[argv.index("--output-format") + 1] == "json"
+    assert "--input-format" not in argv and "--verbose" not in argv
+    assert stdin.startswith("You are turning a short social-media video")
+
+
+async def test_claude_code_stream_json_error_degrades(tmp_path):
+    raw = stream_json_output(result="Not logged in", is_error=True)
+    with patch.object(summarize, "_run_cli", AsyncMock(return_value=raw)):
+        result = await summarize.summarize(
+            "First line of caption", None, settings(tmp_path, summary_provider="claude-code"), frames=frames(2)
+        )
+    assert result.title == "First line of caption" and result.summary == ""
+
+
+def test_stream_json_result_needs_a_result_event():
+    assert summarize._stream_json_result(stream_json_output())["result"] == REPLY_JSON
+    with pytest.raises(summarize.SummaryError, match="no result event"):
+        summarize._stream_json_result('{"type": "assistant"}\nnot json at all')
+
+
+# ── codex backend ──────────────────────────────────────────────────────
+
+
+async def test_codex_attaches_sheets_as_image_files(tmp_path):
+    seen = {}
+
+    async def fake_run(argv, prompt):
+        images = [argv[i + 1] for i, a in enumerate(argv) if a == "-i"]
+        seen["images"] = images
+        seen["exists"] = [Path(p).exists() for p in images]
+        seen["png"] = [Path(p).read_bytes()[:8] for p in images]
+        seen["prompt"] = prompt
+        Path(argv[argv.index("--output-last-message") + 1]).write_text(REPLY_JSON)
+        return "ignored stdout"
+
+    with patch.object(summarize, "_run_cli", fake_run):
+        result = await summarize.summarize("cap", None, settings(tmp_path, summary_provider="codex"), frames=frames(20))
+    assert result.title == "T"
+    assert len(seen["images"]) == 2  # one -i per contact sheet
+    assert all(seen["exists"])
+    assert all(header == b"\x89PNG\r\n\x1a\n" for header in seen["png"])
+    assert "contact sheets, in order" in seen["prompt"]
+    assert not any(Path(p).exists() for p in seen["images"])  # temp files cleaned up
+
+
+async def test_codex_without_vision_passes_no_images(tmp_path):
+    async def fake_run(argv, prompt):
+        assert "-i" not in argv
+        Path(argv[argv.index("--output-last-message") + 1]).write_text(REPLY_JSON)
+        return ""
+
+    with patch.object(summarize, "_run_cli", fake_run):
+        result = await summarize.summarize("cap", None, settings(tmp_path, summary_provider="codex", vision=False))
+    assert result.title == "T"
 
 
 # ── the cap ────────────────────────────────────────────────────────────
@@ -151,17 +286,26 @@ def test_select_frames_caps_and_spreads():
 async def test_summarize_never_sends_more_than_the_cap(tmp_path):
     sent = {}
     with stub_openai(sent):
-        await summarize.summarize("cap", None, settings(tmp_path), frames=frames(60))
+        await summarize.summarize("cap", None, settings(tmp_path), frames=frames(200))
     images = [part for part in sent["messages"][1]["content"] if part["type"] == "image_url"]
-    assert len(images) == MAX_VISION_FRAMES
+    assert len(images) == MAX_VISION_FRAMES // ocr.FRAMES_PER_GRID == 3
 
 
-def test_vision_estimate_is_capped_and_priced(tmp_path):
-    count, usd = vision_estimate(60, settings(tmp_path))
-    assert count == MAX_VISION_FRAMES
-    assert usd == pytest.approx(MAX_VISION_FRAMES * 2833 * 0.15 / 1e6, rel=1e-2)
-    assert vision_estimate(5, settings(tmp_path)) == (5, pytest.approx(5 * 2833 * 0.15 / 1e6, abs=1e-4))
-    assert vision_estimate(60, settings(tmp_path, summary_provider="anthropic"))[1] > usd
+def test_vision_estimate_prices_sheets_not_frames(tmp_path):
+    est = vision_estimate(60, settings(tmp_path))
+    assert est.frames == 48 and est.sheets == 3
+    assert est.usd == pytest.approx(3 * 2833 * 0.15 / 1e6, abs=1e-4)  # three images, not forty-eight
+    short = vision_estimate(10, settings(tmp_path))
+    assert short.frames == 10 and short.sheets == 1
+    assert "1 contact sheet," in short.describe()
+    assert vision_estimate(60, settings(tmp_path, summary_provider="anthropic")).usd > est.usd
+
+
+def test_vision_estimate_is_free_on_subscription_backends(tmp_path):
+    for provider in ("claude-code", "codex"):
+        est = vision_estimate(60, settings(tmp_path, summary_provider=provider))
+        assert est.sheets == 3 and est.usd == 0.0
+        assert "included in your subscription" in est.describe()
 
 
 # ── pipeline wiring ────────────────────────────────────────────────────
@@ -176,7 +320,7 @@ async def test_pipeline_sends_frames_and_records_the_video_source(tmp_path):
         result = await import_reel("https://www.tiktok.com/@c/video/1", settings(tmp_path))
     assert download.await_args.kwargs["video"] is True
     assert result.sources == ("caption", "video")
-    assert len(backend.await_args.args[4]) == 3
+    assert len(backend.await_args.args[4]) == 1  # three frames arrive as one sheet
     assert "sources: [caption, video]" in result.path.read_text()
 
 
@@ -193,19 +337,26 @@ async def test_vision_reuses_the_frames_ocr_would_have_sampled(tmp_path):
     assert result.sources == ("caption", "screen_text", "video")
 
 
-async def test_unsupported_backend_warns_and_still_summarizes(tmp_path):
-    with (
-        patch.object(media, "download_media", AsyncMock(return_value=video())) as download,
-        patch("shortform_notes.summarize._summarize_claude_code", AsyncMock(return_value=REPLY)) as backend,
-    ):
-        result = await import_reel(
-            "https://www.tiktok.com/@c/video/1", settings(tmp_path, summary_provider="claude-code")
-        )
-    assert result.title == "T"
+async def test_vision_on_every_backend_downloads_the_video(tmp_path):
+    for provider in ("openai", "anthropic", "claude-code", "codex"):
+        with (
+            patch.object(media, "download_media", AsyncMock(return_value=video())) as download,
+            patch.object(ocr, "extract_frames", AsyncMock(return_value=frames(2))),
+            patch(f"shortform_notes.summarize._summarize_{provider.replace('-', '_')}", AsyncMock(return_value=REPLY)),
+        ):
+            result = await import_reel(
+                "https://www.tiktok.com/@c/video/1", settings(tmp_path, summary_provider=provider)
+            )
+        assert download.await_args.kwargs["video"] is True, provider
+        assert result.sources == ("caption", "video"), provider
+
+
+async def test_no_summary_backend_warns_and_skips_the_download(tmp_path):
+    with patch.object(media, "download_media", AsyncMock(return_value=video())) as download:
+        result = await import_reel("https://www.tiktok.com/@c/video/1", settings(tmp_path, summary_provider="none"))
     assert result.sources == ("caption",)
-    assert any("Vision skipped" in w and "claude-code" in w for w in result.warnings)
+    assert any("Vision skipped: no summary backend" in w for w in result.warnings)
     assert download.await_args.kwargs["video"] is False  # no point paying for the whole mp4
-    assert backend.await_args.args[4] == ()
 
 
 async def test_frame_sampling_failure_is_a_warning(tmp_path):
@@ -254,12 +405,13 @@ def test_vision_flag_beats_env_beats_config_file(monkeypatch, tmp_path):
     assert _load(vision=False).vision is False
 
 
-def test_can_see_video_only_for_image_capable_backends(tmp_path):
-    assert settings(tmp_path).can_see_video is True
-    assert settings(tmp_path, summary_provider="anthropic").can_see_video is True
-    for provider in ("claude-code", "codex", "none"):
-        assert settings(tmp_path, summary_provider=provider).can_see_video is False
+def test_can_see_video_covers_every_backend_but_none(tmp_path):
+    for provider in ("openai", "anthropic", "claude-code", "codex"):
+        assert settings(tmp_path, summary_provider=provider).can_see_video is True, provider
+    assert settings(tmp_path, summary_provider="none").can_see_video is False
     assert settings(tmp_path, vision=False).can_see_video is False
+    assert settings(tmp_path, summary_provider="codex").vision_is_metered is False
+    assert settings(tmp_path, summary_provider="openai").vision_is_metered is True
 
 
 def test_cli_flags_reach_settings(tmp_path, monkeypatch):

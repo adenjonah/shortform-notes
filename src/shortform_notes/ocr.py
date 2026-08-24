@@ -35,6 +35,13 @@ DEDUPE_PIXEL_DELTA = 40  # a thumbnail pixel counts as changed when its gray val
 DEDUPE_CHANGED_FRACTION = 0.004  # a frame is "new" when at least this fraction of thumbnail pixels changed
 FRAMES_PER_REQUEST = 8
 
+# Contact sheets: frames are tiled into grids before they go to a vision model, which costs
+# one image's tokens per GRID_COLS*GRID_ROWS frames and shows the model their order spatially.
+GRID_COLS = 4
+GRID_ROWS = 4
+FRAMES_PER_GRID = GRID_COLS * GRID_ROWS
+GRID_CELL_MAX_SIDE = 320  # per cell, so a 4x4 sheet of portrait frames lands near 720x1280
+
 OCR_PROMPT = (
     "These are frames from a short video, in order. For each frame, transcribe every piece of "
     "on-screen text exactly as written (captions, overlays, labels, lists). Return JSON: "
@@ -47,6 +54,18 @@ OCR_PROMPT = (
 class Frame:
     seconds: float
     png: bytes  # PNG-encoded, downscaled
+
+
+@dataclass(frozen=True)
+class Grid:
+    """A contact sheet: several frames tiled into one PNG, each cell labelled with its timestamp."""
+
+    png: bytes
+    seconds: tuple[float, ...]  # cell timestamps, row-major
+
+    def describe(self) -> str:
+        span = f"{timestamp(self.seconds[0])} to {timestamp(self.seconds[-1])}"
+        return f"{len(self.seconds)} frames, {span}"
 
 
 @dataclass(frozen=True)
@@ -129,6 +148,60 @@ async def extract_frames(video_path: str, fps: float) -> list[Frame]:
 def timestamp(seconds: float) -> str:
     mm, ss = divmod(int(seconds), 60)
     return f"{mm:02d}:{ss:02d}"
+
+
+# ── contact sheets ─────────────────────────────────────────────────────
+
+
+def _label(cell, text: str) -> None:
+    """Burn a timestamp into the cell's top-left corner, on a filled box so it reads on any frame."""
+    import cv2
+
+    font, scale, thickness = cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1
+    (tw, th), _ = cv2.getTextSize(text, font, scale, thickness)
+    cv2.rectangle(cell, (0, 0), (tw + 8, th + 8), (0, 0, 0), -1)
+    cv2.putText(cell, text, (4, th + 4), font, scale, (255, 255, 255), thickness, cv2.LINE_AA)
+
+
+def _tile_sync(frames: list[Frame], cols: int, rows: int, cell_max_side: int) -> list[Grid]:
+    import cv2
+    import numpy as np
+
+    per_sheet = cols * rows
+    grids: list[Grid] = []
+    for start in range(0, len(frames), per_sheet):
+        batch = frames[start : start + per_sheet]
+        cells = []
+        for frame in batch:
+            img = cv2.imdecode(np.frombuffer(frame.png, dtype="uint8"), cv2.IMREAD_COLOR)
+            if img is None:
+                continue
+            h, w = img.shape[:2]
+            scale = min(1.0, cell_max_side / max(h, w))
+            img = cv2.resize(img, (max(1, int(w * scale)), max(1, int(h * scale))), interpolation=cv2.INTER_AREA)
+            _label(img, timestamp(frame.seconds))
+            cells.append(img)
+        if not cells:
+            continue
+        # One cell size for the whole sheet (every frame shares the video's aspect ratio); pad the last row.
+        ch, cw = cells[0].shape[:2]
+        cells = [c if c.shape[:2] == (ch, cw) else cv2.resize(c, (cw, ch)) for c in cells]
+        blank = np.zeros((ch, cw, 3), dtype="uint8")
+        padded = cells + [blank] * (-len(cells) % cols)
+        sheet = np.vstack([np.hstack(padded[i : i + cols]) for i in range(0, len(padded), cols)])
+        ok, buf = cv2.imencode(".png", sheet)
+        if ok:
+            grids.append(Grid(png=buf.tobytes(), seconds=tuple(f.seconds for f in batch[: len(cells)])))
+    return grids
+
+
+async def tile_frames(
+    frames: list[Frame], cols: int = GRID_COLS, rows: int = GRID_ROWS, cell_max_side: int = GRID_CELL_MAX_SIDE
+) -> list[Grid]:
+    """Tile frames into chronological contact sheets, ``cols*rows`` frames per sheet."""
+    if not frames:
+        return []
+    return await asyncio.to_thread(_tile_sync, frames, cols, rows, cell_max_side)
 
 
 # ── OCR backends ───────────────────────────────────────────────────────
