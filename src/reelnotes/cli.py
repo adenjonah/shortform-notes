@@ -9,7 +9,7 @@ import logging
 import sys
 
 from reelnotes import __version__
-from reelnotes.config import load_settings
+from reelnotes.config import SUMMARY_PROVIDERS, TRANSCRIBE_PROVIDERS, load_settings
 from reelnotes.pipeline import ReelImportError, import_reel
 
 
@@ -18,17 +18,26 @@ def build_parser() -> argparse.ArgumentParser:
         prog="reelnotes",
         description="Turn Instagram Reels, TikToks and YouTube Shorts into Markdown notes.",
         epilog=(
-            "Environment: OPENAI_API_KEY (transcription + summary), ANTHROPIC_API_KEY (summary), "
-            "REELNOTES_DIR (output dir), REELNOTES_SUMMARY_PROVIDER, REELNOTES_AUDIENCE. "
-            "With no keys set you still get a caption + metadata note."
+            "No API key? If `claude` (Claude Code) or `codex` is on your PATH, summaries run through it. "
+            "Env: OPENAI_API_KEY, ANTHROPIC_API_KEY, REELNOTES_DIR, REELNOTES_SUMMARY_PROVIDER, "
+            "REELNOTES_TRANSCRIBE_PROVIDER, REELNOTES_AUDIENCE. See .env.example."
         ),
     )
     parser.add_argument(
         "urls", nargs="*", help="one or more reel / short-video links; or the word 'mcp' to run the MCP server"
     )
     parser.add_argument("-o", "--out", help="output directory (default: ./reels or $REELNOTES_DIR)")
-    parser.add_argument("--summary", choices=["openai", "anthropic", "none"], help="summary provider (default: auto)")
-    parser.add_argument("--no-transcript", action="store_true", help="skip audio download + transcription")
+    parser.add_argument(
+        "--summary",
+        choices=[*SUMMARY_PROVIDERS, "auto"],
+        help="who writes the summary: an API key, your claude/codex CLI, or none (default: auto)",
+    )
+    parser.add_argument(
+        "--transcribe",
+        choices=[*TRANSCRIBE_PROVIDERS, "auto"],
+        help="openai (API key), local (offline faster-whisper), or none (default: auto)",
+    )
+    parser.add_argument("--no-transcript", action="store_true", help="alias for --transcribe none")
     parser.add_argument("--json", action="store_true", help="print machine-readable JSON instead of text")
     parser.add_argument("-v", "--verbose", action="store_true", help="show fetch/debug logs")
     parser.add_argument("--version", action="version", version=f"reelnotes {__version__}")
@@ -50,7 +59,11 @@ def _print_result(result, as_json: bool) -> None:
 
 
 async def _run(urls: list[str], args: argparse.Namespace) -> int:
-    settings = load_settings(output_dir=args.out, summary_provider=args.summary, transcribe=not args.no_transcript)
+    settings = load_settings(
+        output_dir=args.out,
+        summary_provider=args.summary,
+        transcribe_provider="none" if args.no_transcript else args.transcribe,
+    )
     failures = 0
     for url in urls:
         try:

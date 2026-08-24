@@ -4,8 +4,9 @@ Each source is independent and the note records which ones succeeded:
 
   1. caption    Instagram: captioned-embed payload (no key). TikTok/YouTube:
                 yt-dlp ``description``. Cheap and often the whole recipe.
-  2. transcript yt-dlp ``bestaudio`` → OpenAI transcription. Needs OPENAI_API_KEY.
-  3. summary    one LLM call (OpenAI or Anthropic). Best-effort.
+  2. transcript yt-dlp ``bestaudio`` → OpenAI transcription or local faster-whisper.
+  3. summary    one LLM call: OpenAI / Anthropic API, or your ``claude`` / ``codex``
+                CLI on the subscription you already have. Best-effort.
 
 Typical cost with everything on: about $0.004 per minute-long reel.
 """
@@ -85,7 +86,9 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> ReelConte
         if not transcript and "transcription failed" not in " ".join(warnings):
             warnings.append("Audio downloaded but transcription returned nothing")
     elif not settings.can_transcribe:
-        warnings.append("Transcription skipped (set OPENAI_API_KEY to enable)")
+        warnings.append(
+            'Transcription skipped (set OPENAI_API_KEY, or pip install "reelnotes[local]" for offline Whisper)'
+        )
 
     sources = tuple(s for s, present in (("caption", caption), ("transcript", transcript)) if present)
     if not sources:

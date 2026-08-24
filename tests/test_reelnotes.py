@@ -22,10 +22,13 @@ def settings(tmp_path: Path, openai: bool = False, anthropic: bool = False, prov
         openai_api_key="sk-test" if openai else None,
         anthropic_api_key="sk-ant-test" if anthropic else None,
         summary_provider=provider or ("openai" if openai else "anthropic" if anthropic else "none"),
-        transcribe=True,
+        transcribe_provider="openai" if openai else "none",
         openai_transcribe_model="gpt-4o-mini-transcribe",
         openai_summary_model="gpt-4o-mini",
         anthropic_summary_model="claude-opus-5",
+        claude_code_model=None,
+        codex_model=None,
+        whisper_model="base",
         audience="the reader",
     )
 
