@@ -38,8 +38,8 @@ def settings(tmp_path, **over) -> config.Settings:
         summary_provider="openai",
         transcribe_provider="none",
         openai_transcribe_model="x",
-        openai_summary_model="gpt-4o-mini",
-        anthropic_summary_model="claude-opus-5",
+        openai_summary_model="gpt-5-mini",
+        anthropic_summary_model="claude-sonnet-5",
         claude_code_model=None,
         codex_model=None,
         whisper_model="base",
@@ -47,8 +47,8 @@ def settings(tmp_path, **over) -> config.Settings:
         ocr=False,
         ocr_provider="local",
         ocr_fps=1.0,
-        ocr_openai_model="gpt-4o-mini",
-        ocr_anthropic_model="claude-opus-5",
+        ocr_openai_model="gpt-5-mini",
+        ocr_anthropic_model="claude-sonnet-5",
         vision=True,
         fps_explicit=False,
     )
@@ -162,6 +162,15 @@ async def test_sheets_reach_the_openai_payload(tmp_path):
     labels = [part.get("text") or "" for part in content]
     assert any(label.startswith("contact sheet 1 of 2: 16 frames, 00:00 to 00:15") for label in labels)
     assert "contact sheets of frames sampled" in sent["messages"][0]["content"]
+
+
+async def test_openai_request_uses_gpt5_compatible_parameters(tmp_path):
+    """gpt-5-mini 400s on `max_tokens` and on any temperature but the default."""
+    sent = {}
+    with stub_openai(sent):
+        await summarize.summarize("cap", "spoken", settings(tmp_path), frames=frames(4))
+    assert "max_tokens" not in sent and "temperature" not in sent
+    assert sent["max_completion_tokens"] >= 2000  # reasoning tokens come out of this budget too
 
 
 async def test_sheets_reach_the_anthropic_payload(tmp_path):
@@ -299,7 +308,8 @@ async def test_summarize_never_sends_more_than_the_cap(tmp_path):
 def test_vision_estimate_prices_sheets_not_frames(tmp_path):
     est = vision_estimate(60, settings(tmp_path))
     assert est.frames == 48 and est.sheets == 3
-    assert est.usd == pytest.approx(3 * ocr.OPENAI_TOKENS_PER_SHEET * 0.15 / 1e6, abs=1e-4)  # 3 images, not 48
+    sheet_tokens = ocr.openai_image_tokens(*ocr.sheet_dims())
+    assert est.usd == pytest.approx(3 * sheet_tokens * 0.25 / 1e6, abs=1e-4)  # 3 images, not 48
     short = vision_estimate(10, settings(tmp_path))
     assert short.frames == 10 and short.sheets == 1
     assert "1 contact sheet," in short.describe()

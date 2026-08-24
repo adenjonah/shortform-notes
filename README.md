@@ -86,8 +86,8 @@ Summaries prefer a coding-agent CLI over an API key on purpose. The pitch of thi
 ### Option A: your own API key
 
 ```bash
-export OPENAI_API_KEY=sk-...          # transcription (gpt-4o-mini-transcribe) + summaries (gpt-4o-mini)
-export ANTHROPIC_API_KEY=sk-ant-...   # summaries with Claude instead (claude-opus-5)
+export OPENAI_API_KEY=sk-...          # transcription (gpt-transcribe) + summaries (gpt-5-mini)
+export ANTHROPIC_API_KEY=sk-ant-...   # summaries with Claude instead (claude-sonnet-5)
 shortform-notes <url>
 ```
 
@@ -125,7 +125,7 @@ Many recipe and tip videos put the details in text overlays rather than speech. 
 
 ```bash
 shortform-notes --ocr https://www.instagram.com/p/DS3DPehEnpA/            # local OCR, free
-shortform-notes --ocr --ocr-provider openai https://www.instagram.com/p/DS3DPehEnpA/   # gpt-4o-mini vision
+shortform-notes --ocr --ocr-provider openai https://www.instagram.com/p/DS3DPehEnpA/   # gpt-5-mini vision
 shortform-notes --ocr --ocr-fps 0 https://www.instagram.com/p/DS3DPehEnpA/   # read every frame instead of one per second
 ```
 
@@ -146,10 +146,10 @@ Cost estimate, before de-duplication, using the vendors' published prices as of 
 | Backend | Per frame | 30 s video at 1 frame/s | 60 s video at 1 frame/s | 30 s video, every frame |
 |---|---|---|---|---|
 | `local` (RapidOCR on your CPU) | free | free, about 10 s of compute | free | free, several minutes |
-| `openai` (gpt-4o-mini, low detail, 2,833 tokens per frame at $0.15 per 1M) | $0.0004 | $0.013 | $0.025 | $0.38 |
-| `anthropic` (claude-opus-5, about 980 tokens per frame at $5 per 1M) | $0.005 | $0.15 | $0.29 | $4.42 |
+| `openai` (gpt-5-mini, 691 tokens per frame at $0.25 per 1M) | $0.0002 | $0.005 | $0.010 | $0.16 |
+| `anthropic` (claude-sonnet-5, 786 tokens per frame at $2 per 1M) | $0.0016 | $0.047 | $0.094 | $1.41 |
 
-The CLI prints the estimate for a 30 s and 60 s video before running a paid backend, and the setup page shows the same numbers next to the frame-rate field. Set `SHORTFORM_NOTES_OCR_ANTHROPIC_MODEL=claude-haiku-4-5` to cut the Claude figure by five. The `ocr` extra is installed by `start.sh`; for a manual install use `pip install "shortform-notes[ocr]"`.
+The CLI prints the estimate for a 30 s and 60 s video before running a paid backend, and the setup page shows the same numbers next to the frame-rate field. Set `SHORTFORM_NOTES_OCR_ANTHROPIC_MODEL=claude-haiku-4-5` to halve the Claude figure. The `ocr` extra is installed by `start.sh`; for a manual install use `pip install "shortform-notes[ocr]"`.
 
 ### Option E: show the model the video (vision), off by default
 
@@ -165,7 +165,7 @@ It reuses the OCR path's machinery: the whole mp4 is downloaded, frames are samp
 
 **Frames are tiled, not sent one by one.** Up to 16 of them are composed into a contact sheet — a 4x4 grid in chronological order, each cell stamped with its timestamp in the corner — and the sheets are what the model receives. One sheet costs one image instead of sixteen, and the model sees the order of events laid out spatially, so it can say *when* something happened. Cells are capped at 512px on their long side, so a sheet of portrait frames is about 1152x2048 and a cell is still large enough to read. At most 48 frames per video, evenly spaced when de-duplication leaves more, which is three sheets however long the video runs.
 
-Sheets go to OpenAI at `detail=high`. That costs more than `detail=low`, and it is not optional: `low` resizes any image to the same small thumbnail, and on a contact sheet the model then *invents* the text in the cells rather than reading it. Measured on a 16-cell sheet of captioned frames, `low` transcribed 2 of 16 cells correctly and `high` transcribed 16 of 16.
+Sheets go to OpenAI at `detail=high`. That costs more than `detail=low`, and it is not optional: `low` gives the image a much smaller pixel budget, and on a contact sheet the model then *invents* the text in the cells rather than reading it. Measured on a 16-cell sheet of captioned frames, `low` transcribed 2 of 16 cells correctly and `high` transcribed 16 of 16. That measurement was taken on `gpt-4o-mini`, the previous default. `gpt-5-mini` prices images by 32x32 patches rather than tiles and caps `high` at 1,536 patches; OpenAI does not publish the `low` budget, but it is smaller by construction, so the trade-off is the same one.
 
 **What it sees is written down.** The same call also returns a scene-by-scene breakdown, which lands in the note as a `## Video breakdown` section of timestamped lines and in `--json` under `scenes`:
 
@@ -183,8 +183,8 @@ Without it the model's visual observations are boiled down into a few takeaways 
 
 | Backend | How the sheets get there | Cost |
 |---|---|---|
-| `openai` | image blocks in the Chat Completions request, `detail=high` | about $0.017 per video on `gpt-4o-mini` |
-| `anthropic` | image blocks in the Messages request | about $0.047 per video on `claude-opus-5` |
+| `openai` | image blocks in the Chat Completions request, `detail=high` | about $0.0014 per video on `gpt-5-mini` |
+| `anthropic` | image blocks in the Messages request | about $0.019 per video on `claude-sonnet-5` |
 | `claude-code` | an API-style user message on `claude -p --input-format stream-json` | included in your subscription |
 | `codex` | temp PNGs passed as `codex exec -i` | included in your subscription |
 | `none` | no call is made, so nothing sees them; the note says vision was skipped | free |
@@ -208,10 +208,13 @@ The setup page writes `~/.config/shortform-notes/config.env`; the CLI, MCP serve
 | `SHORTFORM_NOTES_OCR_PROVIDER` | `--ocr-provider` | `auto` | `local` (free), `openai`, `anthropic`; auto picks openai when a key is set, else local |
 | `SHORTFORM_NOTES_OCR_FPS` | `--ocr-fps` | `1` | Frames sampled per second, for OCR and vision alike; `0` reads every frame. Setting it turns off cut-aware sampling |
 | `SHORTFORM_NOTES_VISION` | `--vision` / `--no-vision` | `0` | Send the sampled frames to the summary model as contact sheets (every backend but `none`) |
-| `SHORTFORM_NOTES_OCR_OPENAI_MODEL` | | `gpt-4o-mini` | OpenAI vision model for OCR |
-| `SHORTFORM_NOTES_OCR_ANTHROPIC_MODEL` | | `claude-opus-5` | Anthropic vision model for OCR |
-| `SHORTFORM_NOTES_OPENAI_MODEL` | | `gpt-4o-mini` | OpenAI summary model |
-| `SHORTFORM_NOTES_ANTHROPIC_MODEL` | | `claude-opus-5` | Anthropic summary model |
+| `SHORTFORM_NOTES_OCR_OPENAI_MODEL` | | `gpt-5-mini` | OpenAI vision model for OCR |
+| `SHORTFORM_NOTES_OCR_ANTHROPIC_MODEL` | | `claude-sonnet-5` | Anthropic vision model for OCR |
+| `SHORTFORM_NOTES_OPENAI_MODEL` | | `gpt-5-mini` | OpenAI summary model |
+| `SHORTFORM_NOTES_ANTHROPIC_MODEL` | | `claude-sonnet-5` | Anthropic summary model |
+| `SHORTFORM_NOTES_TRANSCRIBE_MODEL` | | `gpt-transcribe` | OpenAI transcription model |
+
+**Why these model defaults.** They are matched mid-tier on both vendors — neither bargain-bin quality nor silent flagship spend. A default that quietly bills at flagship rates is a bad surprise, and one that reaches for the cheapest model of a previous generation reads frames badly enough to make the whole feature untrustworthy. Every one of them is a variable in the table above, so `SHORTFORM_NOTES_ANTHROPIC_MODEL=claude-opus-5` or `SHORTFORM_NOTES_OPENAI_MODEL=gpt-5` is a one-line override when a particular video is worth it.
 
 `shortform-notes --help` lists every option. `--json` gives machine-readable output; `--no-transcript` skips the audio download.
 

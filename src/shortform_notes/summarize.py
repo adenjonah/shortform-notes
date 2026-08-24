@@ -264,9 +264,9 @@ async def _summarize_openai(
         for i, grid in enumerate(grids, 1):
             b64 = base64.b64encode(grid.png).decode()
             user.append({"type": "text", "text": f"contact sheet {i} of {len(grids)}: {grid.describe()}"})
-            # detail=high, not low: low resizes the sheet to a fixed thumbnail whatever its size, and
-            # the model then invents cell text rather than reading it (measured: 2/16 cells correct at
-            # low, 16/16 at high). It is the difference between seeing the video and guessing at it.
+            # detail=high, not low: low gives the sheet a far smaller pixel budget, and the model
+            # then invents cell text rather than reading it (measured on gpt-4o-mini: 2/16 cells
+            # correct at low, 16/16 at high). The difference between seeing the video and guessing.
             user.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}", "detail": "high"}})
     client = AsyncOpenAI(api_key=settings.openai_api_key)
     response = await client.chat.completions.create(
@@ -279,8 +279,11 @@ async def _summarize_openai(
             "type": "json_schema",
             "json_schema": {"name": "reel_summary", "strict": True, "schema": summary_schema(bool(grids))},
         },
-        temperature=0.2,
-        max_tokens=800,
+        # The GPT-5 family rejects `max_tokens` (400, "use max_completion_tokens") and any
+        # temperature but the default, so neither appears here. The budget covers reasoning
+        # tokens as well as the reply — too small and a reasoning model spends it all thinking
+        # and returns an empty message. The schema keeps the output tight without a temperature.
+        max_completion_tokens=4000,
     )
     return json.loads(response.choices[0].message.content or "{}")
 

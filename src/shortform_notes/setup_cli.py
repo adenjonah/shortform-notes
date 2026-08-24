@@ -23,11 +23,11 @@ SUMMARY_CHOICES = [
 OCR_CHOICES = [
     ("off", "Off", "caption and transcript only (default)"),
     ("local", "On, local OCR", "free, runs on this computer; slower per reel"),
-    ("openai", "On, OpenAI vision", "about $0.013 per 30 s video at 1 frame per second"),
-    ("anthropic", "On, Claude vision", "about $0.18 per 30 s video at 1 frame per second with claude-opus-5"),
+    ("openai", "On, OpenAI vision", "about $0.005 per 30 s video at 1 frame per second"),
+    ("anthropic", "On, Claude vision", "about $0.05 per 30 s video at 1 frame per second with claude-sonnet-5"),
 ]
 TRANSCRIBE_CHOICES = [
-    ("openai", "OpenAI", "about $0.003 per minute of video; needs an OpenAI API key"),
+    ("openai", "OpenAI", "about $0.0045 per minute of video; needs an OpenAI API key"),
     ("local", "Offline on this computer", "free and private; the first run downloads a 75 MB model"),
     ("none", "Skip transcripts", "caption and metadata only"),
 ]

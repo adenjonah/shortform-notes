@@ -29,8 +29,8 @@ def settings(tmp_path, **over) -> config.Settings:
         ocr=True,
         ocr_provider="local",
         ocr_fps=1.0,
-        ocr_openai_model="gpt-4o-mini",
-        ocr_anthropic_model="claude-opus-5",
+        ocr_openai_model="gpt-5-mini",
+        ocr_anthropic_model="claude-sonnet-5",
         vision=False,
         fps_explicit=False,
     )
@@ -60,9 +60,19 @@ def test_frame_count_and_cost(tmp_path):
     assert ocr.estimate(30, s_local).usd == 0 and "free" in ocr.estimate(30, s_local).describe()
     s_openai = settings(tmp_path, ocr_provider="openai")
     e = ocr.estimate(30, s_openai)
-    assert e.frames == 30 and e.usd == pytest.approx(30 * 2833 * 0.15 / 1e6, rel=1e-2)
+    assert e.frames == 30 and e.usd == pytest.approx(30 * 691 * 0.25 / 1e6, rel=1e-2)  # 576x1024, 576 patches
     s_claude = settings(tmp_path, ocr_provider="anthropic")
-    assert ocr.estimate(30, s_claude).usd > e.usd  # opus-5 vision is the expensive option
+    assert ocr.estimate(30, s_claude).usd > e.usd  # Claude vision is the expensive option
+
+
+def test_openai_image_tokens_follow_the_patch_formula():
+    assert ocr.openai_image_tokens(576, 1024) == 691  # 18*32 patches, under budget, x1.2
+    assert ocr.openai_image_tokens(*ocr.sheet_dims()) == 1843  # 2304 patches, clamped to the 1536 budget
+    assert ocr.openai_image_tokens(32, 32) == 1  # one patch
+
+
+def test_anthropic_image_tokens_follow_the_published_divisor():
+    assert ocr.anthropic_image_tokens(576, 1024) == 786  # width*height/750
 
 
 # frames

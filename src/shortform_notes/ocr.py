@@ -6,7 +6,7 @@ are sampled — at the video's cuts when ffmpeg is installed, otherwise at
 by one of:
 
 * ``local``      RapidOCR (PaddleOCR models on onnxruntime). Free, offline.
-* ``openai``     gpt-4o-mini vision, ``detail=low`` (2,833 tokens per frame).
+* ``openai``     gpt-5-mini vision (32x32 patches, about 690 tokens per frame).
 * ``anthropic``  Claude vision (about width*height/750 tokens per frame).
 
 Costs are estimated from the published per-token prices below before any
@@ -31,15 +31,24 @@ from shortform_notes.config import Settings
 
 logger = logging.getLogger(__name__)
 
-# Per-frame token counts and USD per 1M input tokens, from the vendors' pricing pages (checked 2026-08-24).
-OPENAI_TOKENS_PER_FRAME_LOW = 2833  # gpt-4o-mini, detail=low
-OPENAI_PRICE_PER_M = {"gpt-4o-mini": 0.15}
-ANTHROPIC_PRICE_PER_M = {"claude-opus-5": 5.0, "claude-sonnet-5": 3.0, "claude-haiku-4-5": 1.0}
-# A contact sheet is one image but not one frame's worth of tokens, and vision sends it at full
-# detail so the cells stay readable. Both counts were measured against the live APIs on a 4x4
-# sheet of portrait cells (2026-08-24), not derived from the published tile arithmetic.
-OPENAI_TOKENS_PER_SHEET = 36_835  # gpt-4o-mini, detail=high
-ANTHROPIC_TOKENS_PER_SHEET = 3_150  # claude-opus-5, 1152x2048 sheet
+# USD per 1M input tokens, from the vendors' pricing pages (checked 2026-08-24).
+OPENAI_PRICE_PER_M = {"gpt-5-mini": 0.25, "gpt-5": 1.25, "gpt-5-nano": 0.05}
+# Sonnet 5's $2 is an introductory rate the pricing page runs through 2026-08-31; it lists at $3
+# after that, so re-check this table if the estimates start reading low.
+ANTHROPIC_PRICE_PER_M = {"claude-sonnet-5": 2.0, "claude-opus-5": 5.0, "claude-haiku-4-5": 1.0}
+
+# The two vendors count image tokens by completely different arithmetic, so each gets its own
+# function rather than a single fudged per-frame constant.
+#
+# OpenAI's GPT-5 family bills 32x32 patches: ceil(w/32) * ceil(h/32), capped at a patch budget,
+# times a per-model multiplier. This replaces the base+tile formula gpt-4o-mini used (2,833 base /
+# 5,667 per tile) — those numbers do not apply to gpt-5-mini at all and are gone.
+OPENAI_PATCH_SIDE = 32
+OPENAI_PATCH_BUDGET = 1536  # gpt-5-mini/nano at detail=high; over budget, the image is rescaled to fit
+OPENAI_PATCH_MULTIPLIER = 1.2  # gpt-5-mini and gpt-5.x; gpt-5-nano is 1.5
+# Anthropic publishes width*height/750 for every current model.
+ANTHROPIC_PIXELS_PER_TOKEN = 750
+
 FRAME_MAX_SIDE = 1024  # frames are downscaled to this before OCR; enough for overlay text
 DEDUPE_PIXEL_DELTA = 40  # a thumbnail pixel counts as changed when its gray value moves by at least this much
 DEDUPE_CHANGED_FRACTION = 0.004  # a frame is "new" when at least this fraction of thumbnail pixels changed
@@ -51,6 +60,7 @@ GRID_COLS = 4
 GRID_ROWS = 4
 FRAMES_PER_GRID = GRID_COLS * GRID_ROWS
 GRID_CELL_MAX_SIDE = 512  # per cell, so a 4x4 sheet of portrait frames lands near 1152x2048
+PORTRAIT_ASPECT = 9 / 16  # short-form video is portrait; the cost estimates assume that shape
 
 OCR_PROMPT = (
     "These are frames from a short video, in order. For each frame, transcribe every piece of "
@@ -99,22 +109,47 @@ def frame_count(duration_seconds: float, fps: float, native_fps: float = 30.0) -
     return max(1, math.ceil(duration_seconds * rate))
 
 
-def per_frame_usd(provider: str, model: str, width: int = 720, height: int = 1280) -> float:
+def openai_image_tokens(width: int, height: int) -> int:
+    """Image tokens on the GPT-5 patch pricing.
+
+    An image over the budget is rescaled to fit it, so clamping the patch count is an upper
+    bound on the rescaled one — a few percent high on a sheet, which is the safe direction
+    for a number shown to the user before they spend anything.
+    """
+    patches = math.ceil(width / OPENAI_PATCH_SIDE) * math.ceil(height / OPENAI_PATCH_SIDE)
+    return round(min(patches, OPENAI_PATCH_BUDGET) * OPENAI_PATCH_MULTIPLIER)
+
+
+def anthropic_image_tokens(width: int, height: int) -> int:
+    return round(width * height / ANTHROPIC_PIXELS_PER_TOKEN)
+
+
+def _fit(width: int, height: int, max_side: int) -> tuple[int, int]:
+    """The image as it is actually sent: scaled down until its long side is max_side."""
+    scale = min(1.0, max_side / max(width, height))
+    return round(width * scale), round(height * scale)
+
+
+def _image_usd(provider: str, model: str, width: int, height: int) -> float:
     if provider == "openai":
-        return OPENAI_TOKENS_PER_FRAME_LOW * OPENAI_PRICE_PER_M.get(model, 0.15) / 1_000_000
+        return openai_image_tokens(width, height) * OPENAI_PRICE_PER_M.get(model, 0.25) / 1_000_000
     if provider == "anthropic":
-        tokens = min(width, FRAME_MAX_SIDE) * min(height, FRAME_MAX_SIDE) / 750
-        return tokens * ANTHROPIC_PRICE_PER_M.get(model, 5.0) / 1_000_000
-    return 0.0
+        return anthropic_image_tokens(width, height) * ANTHROPIC_PRICE_PER_M.get(model, 2.0) / 1_000_000
+    return 0.0  # local OCR is free and the CLI backends bill to a subscription
+
+
+def sheet_dims() -> tuple[int, int]:
+    """A full contact sheet of portrait cells: the shape the vision estimate assumes."""
+    return GRID_COLS * round(GRID_CELL_MAX_SIDE * PORTRAIT_ASPECT), GRID_ROWS * GRID_CELL_MAX_SIDE
+
+
+def per_frame_usd(provider: str, model: str, width: int = 720, height: int = 1280) -> float:
+    return _image_usd(provider, model, *_fit(width, height, FRAME_MAX_SIDE))
 
 
 def per_sheet_usd(provider: str, model: str) -> float:
-    """One contact sheet at the detail vision sends it with. Priced from the measured counts above."""
-    if provider == "openai":
-        return OPENAI_TOKENS_PER_SHEET * OPENAI_PRICE_PER_M.get(model, 0.15) / 1_000_000
-    if provider == "anthropic":
-        return ANTHROPIC_TOKENS_PER_SHEET * ANTHROPIC_PRICE_PER_M.get(model, 5.0) / 1_000_000
-    return 0.0  # the CLI backends bill to a subscription
+    """One contact sheet at the detail vision sends it with."""
+    return _image_usd(provider, model, *sheet_dims())
 
 
 def estimate(duration_seconds: float, settings: Settings) -> OcrEstimate:
@@ -395,7 +430,7 @@ async def _ocr_openai(frames: list[Frame], settings: Settings) -> list[str]:
             model=settings.ocr_openai_model,
             messages=[{"role": "user", "content": content}],
             response_format={"type": "json_object"},
-            max_tokens=2000,
+            max_completion_tokens=6000,  # `max_tokens` is rejected by gpt-5; this also covers reasoning tokens
         )
         out.extend(_parse_batch(response.choices[0].message.content or "", len(batch)))
     return out

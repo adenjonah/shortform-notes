@@ -20,9 +20,11 @@ from pathlib import Path
 DEFAULT_OUTPUT_DIR = "reels"
 # Written by the setup UI (`shortform-notes web`); real environment variables always win over it.
 CONFIG_PATH = Path(os.environ.get("SHORTFORM_NOTES_CONFIG") or "~/.config/shortform-notes/config.env").expanduser()
-DEFAULT_OPENAI_TRANSCRIBE_MODEL = "gpt-4o-mini-transcribe"
-DEFAULT_OPENAI_SUMMARY_MODEL = "gpt-4o-mini"
-DEFAULT_ANTHROPIC_SUMMARY_MODEL = "claude-opus-5"
+# Matched mid-tier defaults on both vendors: neither bargain-bin quality nor silent flagship
+# spend. Every one is overridable with the SHORTFORM_NOTES_*_MODEL variables below.
+DEFAULT_OPENAI_TRANSCRIBE_MODEL = "gpt-transcribe"
+DEFAULT_OPENAI_SUMMARY_MODEL = "gpt-5-mini"
+DEFAULT_ANTHROPIC_SUMMARY_MODEL = "claude-sonnet-5"
 DEFAULT_WHISPER_MODEL = "base"
 
 SUMMARY_PROVIDERS = ("openai", "anthropic", "claude-code", "codex", "none")
@@ -31,8 +33,8 @@ SUMMARY_PROVIDERS = ("openai", "anthropic", "claude-code", "codex", "none")
 VISION_SUMMARY_PROVIDERS = ("openai", "anthropic", "claude-code", "codex")
 OCR_PROVIDERS = ("local", "openai", "anthropic")
 DEFAULT_OCR_FPS = 1.0  # one frame per second; 0 means every frame
-DEFAULT_OCR_OPENAI_MODEL = "gpt-4o-mini"
-DEFAULT_OCR_ANTHROPIC_MODEL = "claude-opus-5"
+DEFAULT_OCR_OPENAI_MODEL = "gpt-5-mini"
+DEFAULT_OCR_ANTHROPIC_MODEL = "claude-sonnet-5"
 TRANSCRIBE_PROVIDERS = ("openai", "local", "none")
 _FALSE = {"0", "false", "no", "off"}
 

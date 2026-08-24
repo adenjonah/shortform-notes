@@ -27,8 +27,8 @@ def settings(**overrides) -> config.Settings:
         ocr=False,
         ocr_provider="local",
         ocr_fps=1.0,
-        ocr_openai_model="gpt-4o-mini",
-        ocr_anthropic_model="claude-opus-5",
+        ocr_openai_model="gpt-5-mini",
+        ocr_anthropic_model="claude-sonnet-5",
         vision=False,
         fps_explicit=False,
     )

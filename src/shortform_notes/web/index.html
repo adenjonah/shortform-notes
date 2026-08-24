@@ -169,8 +169,9 @@
 const $ = (id) => document.getElementById(id);
 let st = null;
 const state = { summary: 'claude-code', transcribe: 'local', ocr: 'off' };
-// Per-frame prices used for the estimate shown to the user (vendor pricing pages, 2026-08-24).
-const OCR_USD_PER_FRAME = { local: 0, openai: 2833 * 0.15 / 1e6, anthropic: (720 * 1024 / 750) * 5.0 / 1e6 };
+// Per-frame prices for the estimate shown to the user (vendor pricing pages, 2026-08-24). Keep in
+// step with ocr.py: gpt-5-mini bills 32x32 patches, Claude bills width*height/750.
+const OCR_USD_PER_FRAME = { local: 0, openai: 691 * 0.25 / 1e6, anthropic: (576 * 1024 / 750) * 2.0 / 1e6 };
 const NAMES = { 'claude-code': 'Claude Code', codex: 'Codex', openai: 'OpenAI API', anthropic: 'Anthropic API', none: 'no summary', local: 'offline Whisper' };
 
 async function boot() {
@@ -227,7 +228,7 @@ function renderTranscribeOpts() {
   const hasKey = !!openaiKey();
   if (!state.transcribe) state.transcribe = hasKey ? 'openai' : 'local';
   const choices = [
-    { id: 'openai', title: 'OpenAI API', desc: 'gpt-4o-mini-transcribe, about $0.003 per minute of video. Handles music and non-English speech well.' + (hasKey ? '' : ' Needs an OpenAI API key.') },
+    { id: 'openai', title: 'OpenAI API', desc: 'gpt-transcribe, about $0.0045 per minute of video. Handles music and non-English speech well.' + (hasKey ? '' : ' Needs an OpenAI API key.') },
     { id: 'local', title: 'Offline Whisper on this computer', desc: 'Runs locally, no data leaves the machine, no API key needed. First run downloads a model of about 75 MB. Less accurate on music-heavy or non-English audio.' },
     { id: 'none', title: 'No transcript', desc: 'Caption and metadata only. No audio is downloaded.' },
   ];
@@ -244,8 +245,8 @@ function renderTranscribeOpts() {
 const OCR = [
   { id: 'off', title: 'Off', desc: 'Caption and transcript only.' },
   { id: 'local', title: 'On, read locally', desc: 'Free. Runs an OCR model on this computer. About 10 seconds of extra work for a 30 second video.' },
-  { id: 'openai', title: 'On, OpenAI vision', desc: 'gpt-4o-mini reads the frames. Needs an OpenAI API key.' },
-  { id: 'anthropic', title: 'On, Claude vision', desc: 'claude-opus-5 reads the frames. Needs an Anthropic API key. The most accurate and the most expensive option.' },
+  { id: 'openai', title: 'On, OpenAI vision', desc: 'gpt-5-mini reads the frames. Needs an OpenAI API key.' },
+  { id: 'anthropic', title: 'On, Claude vision', desc: 'claude-sonnet-5 reads the frames. Needs an Anthropic API key. The most accurate and the most expensive option.' },
 ];
 function renderOcrOpts() {
   $('ocrOpts').innerHTML = OCR.map(c => `
