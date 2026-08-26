@@ -20,6 +20,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+import httpx
+
 from shortform_notes import instagram, media, ocr, urls
 from shortform_notes.config import AGENTIC_VISION_PROVIDERS, Settings, load_settings
 from shortform_notes.note import ReelContent, Scene, build_note, note_filename
@@ -31,6 +33,24 @@ logger = logging.getLogger(__name__)
 
 class ReelImportError(Exception):
     """Nothing usable could be fetched from the URL."""
+
+
+SLIDE_FETCH_TIMEOUT = 20.0
+
+
+async def fetch_slides(image_urls: tuple[str, ...]) -> tuple[list[bytes], list[str]]:
+    """Download carousel slides from Instagram's CDN, in order. A failed slide is a warning, not a failure."""
+    images: list[bytes] = []
+    warnings: list[str] = []
+    async with httpx.AsyncClient(headers=instagram.HEADERS, timeout=SLIDE_FETCH_TIMEOUT, follow_redirects=True) as http:
+        for index, image_url in enumerate(image_urls, start=1):
+            try:
+                resp = await http.get(image_url)
+                resp.raise_for_status()
+                images.append(resp.content)
+            except httpx.HTTPError as exc:
+                warnings.append(f"slide {index} could not be fetched: {exc}")
+    return images, warnings
 
 
 @dataclass(frozen=True)
@@ -93,7 +113,9 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> tuple[Ree
         )
         warnings.extend(downloaded.warnings)
     except media.MediaFetchError as exc:
-        warnings.append(f"yt-dlp could not fetch media: {exc}")
+        # A photo/carousel post has no video for yt-dlp to find; that is not worth a warning.
+        if not (embed and embed.image_urls and "No video formats found" in str(exc)):
+            warnings.append(f"yt-dlp could not fetch media: {exc}")
 
     caption = (embed.caption if embed else None) or (downloaded.caption if downloaded else None)
     transcript = None
@@ -113,7 +135,18 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> tuple[Ree
 
     # Sampled once and shared: the summary call sees the frames, OCR reads the same ones.
     frames: list[ocr.Frame] = []
-    if settings.can_see_video and downloaded and downloaded.video_path:
+    slides = embed.image_urls if embed and not (downloaded and downloaded.video_path) else ()
+    if settings.can_see_video and slides:
+        # A carousel / photo post: yt-dlp has no video to give, so the slides themselves are the frames.
+        images, slide_warnings = await fetch_slides(slides)
+        warnings.extend(slide_warnings)
+        try:
+            frames = await ocr.frames_from_images(images)
+        except Exception as exc:  # noqa: BLE001 (surface as a warning; a text-only summary still runs)
+            warnings.append(f"Vision failed: slides could not be decoded: {exc}")
+        if not frames:
+            warnings.append("Vision skipped: none of the carousel slides could be fetched")
+    elif settings.can_see_video and downloaded and downloaded.video_path:
         logger.info("vision (%s): %s", settings.summary_provider, vision_estimate(duration, settings).describe())
         try:
             frames = await ocr.sample_frames(downloaded.video_path, settings)
@@ -140,7 +173,7 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> tuple[Ree
             ("caption", caption),
             ("transcript", transcript),
             ("screen_text", screen_text),
-            ("video", frames),
+            ("slides" if slides else "video", frames),
         )
         if present
     )

@@ -340,9 +340,7 @@ async def test_agentic_claude_code_writes_frames_and_names_them_in_the_prompt(tm
 
 async def test_oneshot_claude_code_writes_no_frames_dir(tmp_path):
     with patch.object(summarize, "_run_cli", AsyncMock(return_value=stream_json_output())) as run:
-        await summarize.summarize(
-            "cap", None, settings(tmp_path, summary_provider="claude-code"), frames=frames(3)
-        )
+        await summarize.summarize("cap", None, settings(tmp_path, summary_provider="claude-code"), frames=frames(3))
     argv, stdin = run.await_args.args
     assert "--add-dir" not in argv
     assert "full-resolution originals" not in json.loads(stdin)["message"]["content"][0]["text"]
@@ -473,9 +471,19 @@ async def test_scenes_survive_the_round_trip_from_a_backend(tmp_path):
 
 def test_note_renders_a_video_breakdown_section(tmp_path):
     content = ReelContent(
-        url="u", platform="tiktok", caption="cap", transcript=None, screen_text=None, title=None,
-        creator_handle="c", creator_name=None, posted=None, duration=8.0, thumbnail=None,
-        sources=("caption", "video"), warnings=(),
+        url="u",
+        platform="tiktok",
+        caption="cap",
+        transcript=None,
+        screen_text=None,
+        title=None,
+        creator_handle="c",
+        creator_name=None,
+        posted=None,
+        duration=8.0,
+        thumbnail=None,
+        sources=("caption", "video"),
+        warnings=(),
     )
     scenes = (Scene("00:00", "a hand cracks an egg"), Scene("", "the cake comes out"))
     note = build_note(content, "T", "S", ("a",), NOW, scenes)

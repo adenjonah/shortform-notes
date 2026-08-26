@@ -1,17 +1,19 @@
 """URL detection, Instagram embed parsing, note rendering, and pipeline orchestration."""
 
 import json
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from shortform_notes import instagram, media, pipeline, urls
+from shortform_notes import instagram, media, ocr, pipeline, urls
 from shortform_notes.config import Settings
 from shortform_notes.media import DownloadedMedia, MediaFetchError
 from shortform_notes.note import ReelContent, build_note, note_filename, slugify
 from shortform_notes.pipeline import ReelImportError, import_reel
+from shortform_notes.summarize import Summary
 
 NOW = datetime(2026, 8, 23, 20, 30, tzinfo=timezone.utc)
 
@@ -119,6 +121,32 @@ def test_parse_embed_context_json():
     assert embed.video_url == "https://cdn.example/video.mp4"
     assert embed.duration == pytest.approx(26.192)
     assert embed.is_video is True
+
+
+def test_parse_embed_carousel_image_urls():
+    html = embed_html(
+        is_video=False,
+        video_url=None,
+        edge_sidecar_to_children={
+            "edges": [
+                {"node": {"display_url": "https://cdn.example/slide1.jpg", "is_video": False}},
+                {"node": {"display_url": "https://cdn.example/clip.jpg", "is_video": True}},
+                {"node": {"display_url": "https://cdn.example/slide3.jpg", "is_video": False}},
+            ]
+        },
+    )
+    embed = instagram.parse_embed(html, "DQCkNLtgqEe")
+    assert embed.is_video is False
+    assert embed.image_urls == ("https://cdn.example/slide1.jpg", "https://cdn.example/slide3.jpg")
+
+
+def test_parse_embed_single_photo_image_url():
+    embed = instagram.parse_embed(embed_html(is_video=False, video_url=None), "DQCkNLtgqEe")
+    assert embed.image_urls == ("https://cdn.example/display.jpg",)
+
+
+def test_parse_embed_video_has_no_image_urls():
+    assert instagram.parse_embed(embed_html(), "DQCkNLtgqEe").image_urls == ()
 
 
 def test_parse_embed_no_caption():
@@ -268,3 +296,34 @@ async def test_duplicate_filename_gets_suffix(tmp_path):
         second = await import_reel("https://www.tiktok.com/@chef/video/1", s, NOW)
     assert first.path != second.path
     assert second.path.name.endswith("-203000.md")
+
+
+async def test_import_reel_carousel_slides_feed_vision(tmp_path):
+    """No video from yt-dlp, but the embed lists slides: they become the frames the summary model sees."""
+    html = embed_html(
+        is_video=False,
+        video_url=None,
+        edge_sidecar_to_children={
+            "edges": [
+                {"node": {"display_url": "https://cdn.example/slide1.jpg", "is_video": False}},
+                {"node": {"display_url": "https://cdn.example/slide2.jpg", "is_video": False}},
+            ]
+        },
+    )
+    fake_frames = [ocr.Frame(seconds=0.0, png=b"png1"), ocr.Frame(seconds=1.0, png=b"png2")]
+    summarize_mock = AsyncMock(return_value=Summary("Slides", "S", (), ()))
+    with (
+        patch.object(instagram, "fetch_embed", AsyncMock(return_value=instagram.parse_embed(html, "DQCkNLtgqEe"))),
+        patch.object(media, "download_media", AsyncMock(side_effect=media.MediaFetchError("No video formats found!"))),
+        patch.object(pipeline, "fetch_slides", AsyncMock(return_value=([b"jpg1", b"jpg2"], []))) as slides,
+        patch.object(ocr, "frames_from_images", AsyncMock(return_value=fake_frames)) as decode,
+        patch.object(pipeline, "summarize", summarize_mock),
+    ):
+        result = await import_reel(
+            "https://www.instagram.com/p/DQCkNLtgqEe/", replace(settings(tmp_path, openai=True), vision=True), NOW
+        )
+    slides.assert_awaited_once_with(("https://cdn.example/slide1.jpg", "https://cdn.example/slide2.jpg"))
+    decode.assert_awaited_once_with([b"jpg1", b"jpg2"])
+    assert result.sources == ("caption", "slides")
+    assert summarize_mock.await_args.kwargs["frames"] == fake_frames
+    assert not any("yt-dlp could not fetch" in w for w in result.warnings)

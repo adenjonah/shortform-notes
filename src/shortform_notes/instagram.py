@@ -1,7 +1,8 @@
 """Instagram caption fetch via the public captioned-embed page. No login, no API key.
 
 ``https://www.instagram.com/p/<shortcode>/embed/captioned/`` server-renders a
-``contextJSON`` payload (caption, owner, CDN video URL, duration) **only** when
+``contextJSON`` payload (caption, owner, CDN video URL, duration, and for carousels
+the slide image URLs under ``edge_sidecar_to_children``) **only** when
 the request carries ``Sec-Fetch-Mode: navigate``. Without that header you get a
 ~600 KB JavaScript shell and an HTTP 200 that means nothing. Invalid shortcodes
 also return 200, so always check the payload, never the status code.
@@ -46,6 +47,16 @@ class InstagramEmbed:
     thumbnail: str | None
     duration: float | None
     is_video: bool
+    # Carousel / single-image posts: full-size CDN URLs of every image slide, in order.
+    # Empty for videos. These are what --vision looks at when yt-dlp has no video to fetch.
+    image_urls: tuple[str, ...] = ()
+
+
+def _image_urls(media: dict) -> tuple[str, ...]:
+    """Image slides of a carousel (``edge_sidecar_to_children``), or the one image of a photo post."""
+    edges = (media.get("edge_sidecar_to_children") or {}).get("edges") or []
+    children = [edge.get("node") or {} for edge in edges] or [media]
+    return tuple(child["display_url"] for child in children if child.get("display_url") and not child.get("is_video"))
 
 
 async def resolve_shortcode(url: str) -> str | None:
@@ -84,12 +95,13 @@ def parse_embed(html: str, shortcode: str) -> InstagramEmbed | None:
                 thumbnail=media.get("thumbnail_src") or media.get("display_url"),
                 duration=media.get("video_duration"),
                 is_video=bool(media.get("is_video")),
+                image_urls=_image_urls(media),
             )
     # Older posts render the caption as a plain div instead of contextJSON.
     div_match = _CAPTION_DIV_RE.search(html)
     if div_match:
         text = unescape(_TAG_RE.sub("", div_match.group(1).replace("<br>", "\n"))).strip()
-        return InstagramEmbed(shortcode, text or None, None, None, None, None, False)
+        return InstagramEmbed(shortcode, text or None, None, None, None, None, False, ())
     return None
 
 

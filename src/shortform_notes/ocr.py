@@ -216,6 +216,28 @@ def _extract_sync(video_path: str, fps: float) -> list[Frame]:
     return frames
 
 
+def _frames_from_images_sync(images: list[bytes]) -> list[Frame]:
+    import cv2
+    import numpy as np
+
+    frames: list[Frame] = []
+    for index, data in enumerate(images):
+        bgr = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
+        if bgr is None:
+            continue
+        png = _encode(bgr)
+        if png:
+            # A slideshow has no clock; slide N is labelled 00:0N so the existing mm:ss
+            # plumbing (contact-sheet cells, scene times, agentic frame filenames) still works.
+            frames.append(Frame(seconds=float(index), png=png))
+    return frames
+
+
+async def frames_from_images(images: list[bytes]) -> list[Frame]:
+    """Carousel slides (encoded JPEG/PNG bytes, in order) as Frames, one per slide, no de-duplication."""
+    return await asyncio.to_thread(_frames_from_images_sync, images)
+
+
 async def extract_frames(video_path: str, fps: float) -> list[Frame]:
     return await asyncio.to_thread(_extract_sync, video_path, fps)
 
