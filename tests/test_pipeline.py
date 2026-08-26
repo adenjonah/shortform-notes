@@ -4,7 +4,7 @@ import json
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import ANY, AsyncMock, patch
 
 import pytest
 
@@ -327,3 +327,23 @@ async def test_import_reel_carousel_slides_feed_vision(tmp_path):
     assert result.sources == ("caption", "slides")
     assert summarize_mock.await_args.kwargs["frames"] == fake_frames
     assert not any("yt-dlp could not fetch" in w for w in result.warnings)
+
+
+async def test_import_reel_still_post_is_ocrd_without_ocr_flag(tmp_path):
+    """A still post is its text: slides are OCR'd even when --ocr is off and vision is off."""
+    html = embed_html(is_video=False, video_url=None)
+    fake_frames = [ocr.Frame(seconds=0.0, png=b"png1")]
+    with (
+        patch.object(instagram, "fetch_embed", AsyncMock(return_value=instagram.parse_embed(html, "DQCkNLtgqEe"))),
+        patch.object(media, "download_media", AsyncMock(side_effect=MediaFetchError("No video formats found!"))),
+        patch.object(pipeline, "fetch_slides", AsyncMock(return_value=([b"jpg1"], []))),
+        patch.object(ocr, "frames_from_images", AsyncMock(return_value=fake_frames)),
+        patch.object(ocr, "read_screen_text", AsyncMock(return_value=("[00:00] TOP 100 FILMS", 1))) as read,
+        patch.object(pipeline, "summarize", AsyncMock(return_value=Summary("Slides", "S", (), ()))) as summ,
+    ):
+        result = await import_reel("https://www.instagram.com/p/DQCkNLtgqEe/", settings(tmp_path, openai=True), NOW)
+    read.assert_awaited_once_with("", ANY, fake_frames)
+    assert result.sources == ("caption", "screen_text")
+    assert summ.await_args.kwargs["frames"] == []  # vision off: the model gets the OCR text, not the images
+    assert "## On-screen text" in result.path.read_text()
+    assert "TOP 100 FILMS" in result.path.read_text()

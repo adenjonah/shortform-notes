@@ -136,16 +136,18 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> tuple[Ree
     # Sampled once and shared: the summary call sees the frames, OCR reads the same ones.
     frames: list[ocr.Frame] = []
     slides = embed.image_urls if embed and not (downloaded and downloaded.video_path) else ()
-    if settings.can_see_video and slides:
+    # A still post is its text: slides are always OCR'd (local RapidOCR is free), whatever --ocr says.
+    run_ocr = settings.ocr or bool(slides)
+    if slides and (settings.can_see_video or run_ocr):
         # A carousel / photo post: yt-dlp has no video to give, so the slides themselves are the frames.
         images, slide_warnings = await fetch_slides(slides)
         warnings.extend(slide_warnings)
         try:
             frames = await ocr.frames_from_images(images)
         except Exception as exc:  # noqa: BLE001 (surface as a warning; a text-only summary still runs)
-            warnings.append(f"Vision failed: slides could not be decoded: {exc}")
+            warnings.append(f"Slides could not be decoded: {exc}")
         if not frames:
-            warnings.append("Vision skipped: none of the carousel slides could be fetched")
+            warnings.append("Slides skipped: none of the carousel images could be fetched")
     elif settings.can_see_video and downloaded and downloaded.video_path:
         logger.info("vision (%s): %s", settings.summary_provider, vision_estimate(duration, settings).describe())
         try:
@@ -156,10 +158,15 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> tuple[Ree
         warnings.append("Vision skipped: no video could be downloaded")
 
     screen_text = None
-    if settings.ocr and downloaded and downloaded.video_path:
-        logger.info("OCR: %s", ocr.estimate(duration, settings).describe())
+    if run_ocr and (frames or (downloaded and downloaded.video_path)):
+        if frames:
+            logger.info("OCR: %d %s", len(frames), "slides" if slides else "sampled frames")
+        else:
+            logger.info("OCR: %s", ocr.estimate(duration, settings).describe())
         try:
-            screen_text, frames_read = await ocr.read_screen_text(downloaded.video_path, settings, frames or None)
+            screen_text, frames_read = await ocr.read_screen_text(
+                downloaded.video_path if downloaded else "", settings, frames or None
+            )
             if not screen_text:
                 warnings.append(f"OCR read {frames_read} frames and found no on-screen text")
         except Exception as exc:  # noqa: BLE001 (surface as a warning, keep the rest of the note)
@@ -167,13 +174,16 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> tuple[Ree
     elif settings.ocr:
         warnings.append("OCR skipped: no video could be downloaded")
 
+    # Slides only feed the summary model as images when vision is on; OCR alone still reads them.
+    vision_frames = frames if settings.can_see_video else []
+
     sources = tuple(
         s
         for s, present in (
             ("caption", caption),
             ("transcript", transcript),
             ("screen_text", screen_text),
-            ("slides" if slides else "video", frames),
+            ("slides" if slides else "video", vision_frames),
         )
         if present
     )
@@ -198,7 +208,7 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> tuple[Ree
         sources=sources,
         warnings=tuple(warnings),
     )
-    return content, frames
+    return content, vision_frames
 
 
 def _unique_path(directory: Path, filename: str, now: datetime) -> Path:
