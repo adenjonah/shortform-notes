@@ -22,7 +22,7 @@ def build_server():
 
     @server.tool()
     async def import_shortform_note(url: str) -> str:
-        """Import an Instagram reel/post, TikTok, or YouTube Short into a Markdown note.
+        """Import an Instagram reel/post, TikTok video or slideshow, YouTube Short, or X post into a Markdown note.
 
         Fetches the caption, transcribes the audio (if OPENAI_API_KEY is set), writes
         <SHORTFORM_NOTES_DIR>/<date>-<creator>-<slug>.md and returns the title, summary,

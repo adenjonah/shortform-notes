@@ -2,8 +2,9 @@
 
 Each source is independent and the note records which ones succeeded:
 
-  1. caption    Instagram: captioned-embed payload (no key). TikTok/YouTube:
-                yt-dlp ``description``. Cheap and often the whole recipe.
+  1. caption    Instagram: captioned-embed payload (no key). X: syndication payload.
+                TikTok/YouTube: yt-dlp ``description``. Cheap and often the whole recipe.
+                Still posts (carousels, TikTok slideshows, X photos) bring slide images.
   2. transcript yt-dlp ``bestaudio``, then OpenAI transcription or local faster-whisper.
   3. summary    one LLM call: OpenAI / Anthropic API, or the ``claude`` / ``codex``
                 CLI using an existing subscription. Best-effort. With ``vision``
@@ -22,7 +23,7 @@ from pathlib import Path
 
 import httpx
 
-from shortform_notes import instagram, media, ocr, urls
+from shortform_notes import instagram, media, ocr, posts, urls
 from shortform_notes.config import AGENTIC_VISION_PROVIDERS, Settings, load_settings
 from shortform_notes.note import ReelContent, Scene, build_note, note_filename
 from shortform_notes.summarize import summarize, vision_estimate
@@ -107,17 +108,34 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> tuple[Ree
         else:
             warnings.append("Could not resolve an Instagram shortcode from the link")
 
-    try:
-        downloaded = await media.download_media(
-            clean_url, tmpdir, download=settings.can_transcribe or want_frames, video=want_frames
-        )
-        warnings.extend(downloaded.warnings)
-    except media.MediaFetchError as exc:
-        # A photo/carousel post has no video for yt-dlp to find; that is not worth a warning.
-        if not (embed and embed.image_urls and "No video formats found" in str(exc)):
-            warnings.append(f"yt-dlp could not fetch media: {exc}")
+    # TikTok slideshows and X posts: decides what yt-dlp fetches, and brings caption and slides of its own.
+    post = await posts.prefetch(url, platform)
+    if post:
+        clean_url = post.url
+        warnings.extend(post.warnings)
+    image_urls = (embed.image_urls if embed else ()) or (post.image_urls if post else ())
+    media_url = post.media_url if post else clean_url
+    text_only = post is not None and media_url is None and not image_urls  # an X post that is just words
 
-    caption = (embed.caption if embed else None) or (downloaded.caption if downloaded else None)
+    if media_url:
+        try:
+            downloaded = await media.download_media(
+                media_url,
+                tmpdir,
+                download=settings.can_transcribe or want_frames,
+                video=want_frames and (post.video if post else True),
+            )
+            warnings.extend(downloaded.warnings)
+        except media.MediaFetchError as exc:
+            # A photo/carousel post has no video for yt-dlp to find; that is not worth a warning.
+            if not (image_urls and "No video formats found" in str(exc)):
+                warnings.append(f"yt-dlp could not fetch media: {exc}")
+
+    caption = (
+        (embed.caption if embed else None)
+        or (post.caption if post else None)
+        or (downloaded.caption if downloaded else None)
+    )
     transcript = None
     if downloaded and downloaded.audio_path and settings.can_transcribe:
         try:
@@ -126,7 +144,7 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> tuple[Ree
             warnings.append(f"transcription failed: {exc}")
         if not transcript and "transcription failed" not in " ".join(warnings):
             warnings.append("Audio downloaded but transcription returned nothing")
-    elif not settings.can_transcribe:
+    elif not settings.can_transcribe and media_url:
         warnings.append(
             'Transcription skipped (set OPENAI_API_KEY, or pip install "shortform-notes[local]" for offline Whisper)'
         )
@@ -135,7 +153,7 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> tuple[Ree
 
     # Sampled once and shared: the summary call sees the frames, OCR reads the same ones.
     frames: list[ocr.Frame] = []
-    slides = embed.image_urls if embed and not (downloaded and downloaded.video_path) else ()
+    slides = image_urls if not (downloaded and downloaded.video_path) else ()
     # A still post is its text: slides are always OCR'd (local RapidOCR is free), whatever --ocr says.
     run_ocr = settings.ocr or bool(slides)
     if slides and (settings.can_see_video or run_ocr):
@@ -154,7 +172,7 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> tuple[Ree
             frames = await ocr.sample_frames(downloaded.video_path, settings)
         except Exception as exc:  # noqa: BLE001 (surface as a warning; a text-only summary still runs)
             warnings.append(f"Vision failed: frames could not be sampled: {exc}")
-    elif settings.can_see_video:
+    elif settings.can_see_video and not text_only:
         warnings.append("Vision skipped: no video could be downloaded")
 
     screen_text = None
@@ -171,7 +189,7 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> tuple[Ree
                 warnings.append(f"OCR read {frames_read} frames and found no on-screen text")
         except Exception as exc:  # noqa: BLE001 (surface as a warning, keep the rest of the note)
             warnings.append(f"OCR failed: {exc}")
-    elif settings.ocr:
+    elif settings.ocr and not text_only:
         warnings.append("OCR skipped: no video could be downloaded")
 
     # Slides only feed the summary model as images when vision is on; OCR alone still reads them.
@@ -190,9 +208,8 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> tuple[Ree
     if not sources:
         raise ReelImportError("; ".join(warnings) or "no caption or audio available")
 
-    posted = (
-        datetime.fromtimestamp(downloaded.timestamp, tz=timezone.utc) if downloaded and downloaded.timestamp else None
-    )
+    timestamp = (downloaded.timestamp if downloaded else None) or (post.timestamp if post else None)
+    posted = datetime.fromtimestamp(timestamp, tz=timezone.utc) if timestamp else None
     content = ReelContent(
         url=clean_url,
         platform=platform,
@@ -200,8 +217,10 @@ async def gather_content(url: str, tmpdir: str, settings: Settings) -> tuple[Ree
         transcript=transcript,
         screen_text=screen_text,
         title=downloaded.title if downloaded else None,
-        creator_handle=(embed.username if embed else None) or (downloaded.creator_handle if downloaded else None),
-        creator_name=downloaded.creator_name if downloaded else None,
+        creator_handle=(embed.username if embed else None)
+        or (post.username if post else None)
+        or (downloaded.creator_handle if downloaded else None),
+        creator_name=(downloaded.creator_name if downloaded else None) or (post.creator_name if post else None),
         posted=posted,
         duration=(embed.duration if embed else None) or (downloaded.duration if downloaded else None),
         thumbnail=(embed.thumbnail if embed else None) or (downloaded.thumbnail if downloaded else None),
@@ -224,7 +243,7 @@ async def import_reel(url: str, settings: Settings | None = None, now: datetime 
     now = now or datetime.now(timezone.utc)
     clean = urls.detect_reel_url(url)
     if not clean:
-        raise ReelImportError(f"not a supported Instagram / TikTok / YouTube Shorts link: {url}")
+        raise ReelImportError(f"not a supported Instagram / TikTok / YouTube Shorts / X link: {url}")
 
     with tempfile.TemporaryDirectory(prefix="shortform-notes-") as tmpdir:
         content, frames = await gather_content(clean, tmpdir, settings)

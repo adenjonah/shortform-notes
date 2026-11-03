@@ -21,6 +21,9 @@ dependencies = [
   # Deliberately unpinned: yt-dlp's Instagram extractor breaks and is fixed in
   # point releases. Pinning is how other importers rotted within weeks.
   "yt-dlp",
+  # TikTok photo slideshows: yt-dlp rejects /photo/ URLs and drops the slide images;
+  # gallery-dl's TikTok extractor returns them. Unpinned for the same reason as yt-dlp.
+  "gallery-dl",
 ]
 
 [project.optional-dependencies]

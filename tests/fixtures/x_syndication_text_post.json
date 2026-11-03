@@ -1,0 +1,26 @@
+{
+ "__typename": "Tweet",
+ "favorite_count": 378,
+ "lang": "en",
+ "created_at": "2026-11-02T17:04:45.000Z",
+ "display_text_range": [
+  0,
+  276
+ ],
+ "entities": {},
+ "id_str": "2117301900701786126",
+ "text": "▫️THE CERN COLLIDER WENT DARK FOR 11 MINUTES. THE PORTAL WASN'T A METAPHOR.\n\nToday the Large Hadron Collider at CERN went completely dark for 11 minutes.\n\nThe scientific establishment is calling it a \"coolant anomaly.\" A \"magnet quench.\" A \"routine safety shutdown.\"\n\nTHEY ARE",
+ "user": {
+  "id_str": "1459284615978487815",
+  "name": "Mr. Pool",
+  "screen_name": "looP_rM_3117211",
+  "profile_image_url_https": "https://pbs.twimg.com/profile_images/1824769473317830656/Ba9la0AK_normal.jpg"
+ },
+ "conversation_count": 18,
+ "news_action_type": "conversation",
+ "isEdited": false,
+ "isStaleEdit": false,
+ "note_tweet": {
+  "id": "Tm90ZVR3ZWV0UmVzdWx0czoyMTE3MzAxOTAwNDIwNzE4NTky"
+ }
+}

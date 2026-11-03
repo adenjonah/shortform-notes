@@ -18,7 +18,7 @@ from shortform_notes.summarize import MAX_VISION_FRAMES, vision_estimate
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="shortform-notes",
-        description="Turn Instagram Reels, TikToks and YouTube Shorts into Markdown notes.",
+        description="Turn Instagram Reels, TikToks, YouTube Shorts and X posts into Markdown notes.",
         epilog=(
             "Without an API key, summaries run through `claude` (Claude Code) or `codex` if either is on your PATH. "
             "Env: OPENAI_API_KEY, ANTHROPIC_API_KEY, SHORTFORM_NOTES_DIR, SHORTFORM_NOTES_SUMMARY_PROVIDER, "
