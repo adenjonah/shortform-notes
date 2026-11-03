@@ -234,7 +234,8 @@ The setup page writes `~/.config/shortform-notes/config.env`; the CLI, MCP serve
 | Platform | URL shapes | Caption source | Notes |
 |---|---|---|---|
 | Instagram | `/reel/<code>`, `/reels/<code>`, `/p/<code>`, `/tv/<code>`, `/share/reel/<code>` | captioned-embed endpoint (no login) | Share links are resolved to the canonical shortcode; `?igsh=` tracking is stripped |
-| TikTok | `tiktok.com/@user/video/<id>`, `vm.tiktok.com/<code>`, `vt.tiktok.com/<code>` | yt-dlp description | Short links are followed by yt-dlp |
+| TikTok | `tiktok.com/@user/video/<id>`, `tiktok.com/@user/photo/<id>`, `vm.tiktok.com/<code>`, `vt.tiktok.com/<code>`, `tiktok.com/t/<code>` | yt-dlp description | Short links are resolved first. Photo slideshows: slide images via gallery-dl (always OCR'd, shown to the model under `--vision`), soundtrack and caption via yt-dlp |
+| X / Twitter | `x.com/<user>/status/<id>`, `twitter.com/...`, `mobile.twitter.com/...` | public syndication endpoint (no login) | Normalised to `https://x.com/<user>/status/<id>`, `?s=`/`?t=` stripped. Video posts via yt-dlp; photo posts take the slide path; a text-only post imports its text alone. Long posts arrive cut to ~280 characters |
 | YouTube Shorts | `youtube.com/shorts/<id>`, `youtu.be/<id>` | yt-dlp description | Regular `watch?v=` URLs are intentionally not matched; this is a short-video tool |
 
 Several links can be passed in one command; each becomes its own note.
